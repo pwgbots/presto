@@ -1,6 +1,6 @@
-#Presto: software in support of project relays
+# Presto: software in support of project relays
 
-##Platforms
+## Platforms
 The Presto software builds on these software platforms:
 
 * Python
