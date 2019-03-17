@@ -1,0 +1,2609 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% load presto_filters %}
+
+{% block headlines %}
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+.ql-container {
+  font-family: Lato;
+  font-size: 16px;
+}
+.ql-toolbar.ql-snow {
+  padding: 2px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+{% endblock styles %}
+
+{% block component_inits %}
+
+$('.ui.rating').rating();
+
+ERROR_QUILL = new Quill('#error-quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [2, 3, 4, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      ['blockquote'],
+      [{ list: 'ordered' }, { list: 'bullet' }]
+    ]
+  },
+  placeholder: '(no input text found)',
+  theme: 'snow',
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'header', 'list']
+});
+
+QUILL = new Quill('#quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [2, 3, 4, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      ['blockquote'],
+      [{ list: 'ordered' }, { list: 'bullet' }]
+    ]
+  },
+  placeholder: '(item instructions)',
+  theme: 'snow',
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'header', 'list']
+});
+
+QUILL.on('text-change', function(delta, oldDelta, source) {
+  var lbl = $('#words-' + OPEN_QUILL);
+  if (OPEN_QUILL && source == 'user' && lbl) {
+    txt = QUILL.getText().trim();
+    cnt = (txt ? txt.replace(/[\s]+/g, ' ').split(' ').length : 0);
+    lbl.text(cnt);
+    min = $('#min-words-' + OPEN_QUILL).text().trim();
+    min = (min ? parseInt(min) : 0);
+    if (cnt >= min) {
+      lbl.addClass('basic');
+    } else {
+      lbl.removeClass('basic');
+    }
+  }
+});
+
+{% for p in participations %}{% for t in p.tasks %}
+
+{% if t.type == 'UPLOAD' %}
+
+  {% for ui in t.upl_items %}
+    $('#edit-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}').hide();
+    $('#save-btn-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}').hide();
+    disableItemAppraisal({{ p.nr}}, {{ ui.item.number }}, '{{ ui.item.appraisal }}', false);
+  {% endfor %}
+
+{% elif t.type == 'REVIEW' %}
+
+  {% for ri in t.rev_items %}
+    $('#edit-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}').hide();
+    $('#save-btn-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}').hide();
+    disableItemAppraisal({{ p.nr}}, {{ ri.item.number }}, '{{ ri.item.appraisal }}', true);
+  {% endfor %}
+
+  $('#edit-rev-{{ p.nr }}').hide();
+  $('#save-btn-rev-{{ p.nr }}').hide();
+  $('#rev-rat-{{ p.nr }}').rating('disable');
+
+  $('#rev-rat-{{ p.nr }}').rating('setting', 'onRate', function(value) {
+    {% if t.selfie %}
+      $('#rev-rat-inp-{{ p.nr }}').val(3);
+    {% else %}
+      $('#rev-rat-inp-{{ p.nr }}').val(value);
+    {% endif %}
+    {% if t.rejectable %}
+      if (value == 1) {
+        $('#rej-txt-{{ p.nr }}').show();
+        if ($('#wait-{{ p.nr }}').is(':hidden')) {
+          $('#rej-btn-{{ p.nr }}').show();
+        }
+      } else {
+        $('#rej-txt-{{ p.nr }}').hide();
+        $('#rej-btn-{{ p.nr }}').hide();
+      }
+    {% endif %}
+  });
+
+  checkReview({{ p.nr }}, '{{ t.rev_hex }}');
+  
+{% elif t.type == 'APPR-REV' %}
+
+  {% for ri in t.rev_items %}
+    $('#app-rev-{{ p.nr }}-{{ t.nr }}-itap-{{ ri.item.number }}').html(
+        itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+  {% endfor %}
+
+  $('#rev-rat-{{ p.nr }}-{{ t.nr }}').rating('disable');
+  $('#edit-imp-{{ p.nr }}-{{ t.nr }}').hide();
+  $('#edit-appr-{{ p.nr }}-{{ t.nr }}').hide();
+  $('#save-btn-appr-{{ p.nr }}-{{ t.nr }}').hide();
+  {% if t.peer_review.improvement_appraisal == 0 %}
+    $('#view-imp-{{ p.nr }}-{{ t.nr }}').hide();
+  {% endif %}
+  appraise('{{ p.nr }}-{{ t.nr }}', {{ t.peer_review.appraisal }});
+
+{% elif t.type == 'APPR-DEC' %}
+
+  $('#ref-rat-{{ p.nr }}-{{ t.nr }}').rating('disable');
+  $('#edit-appr-{{ p.nr }}-{{ t.nr }}').hide();
+  $('#save-btn-appr-{{ p.nr }}-{{ t.nr }}').hide();
+  appraise('{{ p.nr }}-{{ t.nr }}', {{ t.dec_appr }});
+
+{% elif t.type == 'ACK-APPR' %}
+
+  {% for ri in t.rev_items %}
+    $('#app-rev-{{ p.nr }}-{{ t.nr }}-itap-{{ ri.item.number }}').html(
+        itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+  {% endfor %}
+
+  $('#app-rev-rat-{{ p.nr }}-{{ t.nr }}').rating('disable');
+
+{% endif %}
+
+{% endfor %}{% endfor %}
+
+{% if appeal %}
+  {% for ri in appeal.rev_items %}
+    $('#appeal-itap-{{ ri.item.number }}').html(
+        itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+  {% endfor %}
+  $('#dec-rat').rating('disable');
+  $('#appeal-rev-rat').rating('disable');
+  $('#edit-dec').hide();
+  $('#edit-penalty').hide();
+  $('#save-btn-dec').hide();
+  {%if appeal.words >= appeal.min_words and appeal.object.grade > 0 %}
+    $('#submit-dec-btn').removeClass('disabled');
+  {% else %}
+    $('#submit-dec-btn').addClass('disabled');
+  {% endif %}
+{% endif %}
+
+{% for l in languages %}
+  $('#confirm-reject-{{ l.code }}').modal({onApprove: submitRejection});
+  $('#confirm-appeal-{{ l.code }}').modal({onApprove: submitAppeal});
+  $('#confirm-object-{{ l.code }}').modal({onApprove: submitObjection});
+  $('#confirm-referee-{{ l.code}}').modal({
+    onApprove: function() {
+      window.location.replace('student/referee-appeal/' + REVIEW_HEX);
+    }
+  });
+  $('#confirm-post-review-{{ l.code}}').modal({
+    onApprove: function() {
+      window.location.replace('student/post-review/' + ASSIGNMENT_HEX);
+    }
+  });
+{% endfor %}
+
+{% for ce in ce_appeals %}
+  $('#appeal-{{ ce.nr }}-list').hide();
+{% endfor %}
+
+{% for ie in instructor_estafettes %}
+  $('#post-review-{{ ie.nr }}-list').hide();
+{% endfor %}
+
+{# set timer to update minute counters (even if they are hidden) #}
+nextMinute();
+setInterval(nextMinute, 60000);
+
+{% endblock component_inits %}
+
+
+{% block javascripts %}
+
+{# NOTE: ID of review-with-appeal to be refereed (REVIEW_HEX) is set in agreeToReferee() #}
+{# ID of assignment to be post-reviewed by instructor (ASSIGNMENT_HEX) is set in agreeToPostReview() #}
+
+var REVIEW_HEX = '', ASSIGNMENT_HEX = '', NR_TO_REJECT = 0, NR_TO_APPEAL = 0;
+var QUILL, ERROR_QUILL, OPEN_QUILL = null;
+
+function quillStillOpen() {
+  if (OPEN_QUILL) {
+    console.log('open QUILL: ' + OPEN_QUILL);
+    document.getElementById('edit-' + OPEN_QUILL).scrollIntoView();
+    $('#save-msg-' + OPEN_QUILL).show();
+    return true;
+  }
+  return false;
+}
+
+function openQuill(placeholder, anchor) {
+  OPEN_QUILL = anchor;
+  console.log('QUILL anchor: ' + anchor);
+  QUILL.root.setAttribute('data-placeholder', placeholder);
+  QUILL.setContents([{ insert: '\n' }]);
+  QUILL.pasteHTML($('#view-' + anchor).html());
+  $('#view-' + anchor).hide();
+  $('#edit-btn-' + anchor).hide();
+  QUILL.setSelection(0, 0);
+  $('#quill-container').appendTo($('#edit-' + anchor));
+  $('#edit-' + anchor).show();
+  $('#save-btn-' + anchor).show();
+  QUILL.focus();
+}
+
+function closeQuill() {
+  if (OPEN_QUILL) {
+    $('#view-' + OPEN_QUILL).html(QUILL.container.querySelector('.ql-editor').innerHTML);
+    $('#edit-' + OPEN_QUILL).hide();
+    $('#save-btn-' + OPEN_QUILL).hide();
+    $('#save-msg-' + OPEN_QUILL).hide();
+    $('#view-' + OPEN_QUILL).show();
+    $('#edit-btn-' + OPEN_QUILL).show();
+    OPEN_QUILL = null;
+  }
+}
+
+{# lowers minute countdowns for review and upload tasks #}
+function nextMinute() {
+  $('span.review-timer').each(function() {
+    m = parseInt($(this).text()) - 1;
+    $(this).text(m);
+    if (m > -2 && m < 2) {  {# avoid uncessary AJAX calls, but allow some margin #}
+      checkReview($(this).parent().data('nr'), $(this).parent().data('hex'));
+    }
+  })
+  $('span.upload-timer').each(function() {
+    m = parseInt($(this).text()) - 1;
+    $(this).text(m);
+    if (m <= 0) {
+      $(this).parent().hide();
+      $('#submit-btn-' + $(this).parent().data('nr')).removeClass('disabled');
+    }
+  })
+}
+
+function toggleCommit(nr) {
+  var btn = $('#commit-' + nr + '-btn'), lbl = $('#commit-' + nr + '-lbl');
+  if (btn.hasClass('disabled')) {
+    btn.removeClass('disabled');
+    lbl.css('font-weight', 'bold');
+  } else {
+    btn.addClass('disabled');
+    lbl.css('font-weight', 'normal');
+  }
+}
+
+function toggleInfo(nr) {
+  $('#' + nr + '-file').toggle();
+  $('#info-' + nr).toggle();
+}
+
+function showReviewInstructions(nr) {
+  $('#rev-instr-' + nr).show();
+  $('#show-instr-btn-' + nr).hide();
+  $('#hide-instr-btn-' + nr).show();
+}
+
+function hideReviewInstructions(nr) {
+  $('#rev-instr-' + nr).hide();
+  $('#hide-instr-btn-' + nr).hide();
+  $('#show-instr-btn-' + nr).show();
+}
+
+function enableProceed(nr) {
+  $('#decl-seg-' + nr).hide();
+  $('#proceed-btn-' + nr).removeClass('disabled');
+}
+
+function showErrorModal(msg, html) {
+  $('#error-modal-msg').html(msg);
+  ERROR_QUILL.setContents([{ insert: '\n' }]);
+  ERROR_QUILL.pasteHTML(html);
+  ERROR_QUILL.setSelection(0, 0);
+  $('#error-modal').modal('show');
+  ERROR_QUILL.focus();
+}
+
+function editReview(nr) {
+  if (quillStillOpen()) return;
+  $('#rev-rat-' + nr).rating('enable');
+  $('#submit-btn-' + nr).addClass('disabled');
+  $('#rej-btn-' + nr).addClass('disabled');
+  openQuill('', 'rev-' + nr);
+}
+
+function checkReview(nr, hex) {
+  console.log('CHECK REVIEW: ' + nr + ' (' + hex + ')');
+  var obj = {a: 'check review', h: hex};
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        updateReviewButtons(nr, json, true);
+      }
+    }
+  });
+}
+
+function saveReview(nr, hex) {
+  closeQuill();
+  $('#rev-rat-' + nr).rating('disable');
+  var stars = $('#rev-rat-inp-' + nr).val()
+  $('#rev-rat-' + nr).rating('set rating', stars); {# to correct self-ratings other than 3 stars #}
+  var obj = {
+      a: 'save review',
+      h: hex,
+      r: $('#view-rev-' + nr).html(),
+      rr: stars
+    };
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        showErrorModal(json.error, obj.r);
+      } else {
+        updateReviewButtons(nr, json, true);
+      }
+    }
+  });
+}
+
+function editReviewItem(r_nr, i_nr, style, ric=true) {
+  if (quillStillOpen()) return;
+  $('#submit-btn-' + r_nr).addClass('disabled');
+  if (ric) $('#rej-btn-' + r_nr).hide();
+  enableItemAppraisal(r_nr, i_nr, style, ric);
+  openQuill('', (ric ? 'rev-' : 'upl-') + r_nr + '-cmnt-' + i_nr);
+}
+
+function saveReviewItem(r_nr, i_nr, style, hex, ric=true) {
+  closeQuill();
+  disableItemAppraisal(r_nr, i_nr, style, ric);
+  var icat = (ric ? 'rev-' : 'upl-');
+  var obj = {
+      a: 'save ' + (ric ? 'review' : 'assignment') + ' item',
+      h: hex,
+      i: i_nr,
+      c: $('#view-' + icat + r_nr + '-cmnt-' + i_nr).html(),
+      r: $('#' + icat + r_nr + '-itap-' + i_nr + '-inp').val(),
+      ric: ric
+    };
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        showErrorModal(json.error, obj.c);
+      } else {
+        updateReviewButtons(r_nr, json, ric);
+      }
+    }
+  });
+}
+
+function updateReviewButtons(nr, json, ric) {
+  if (json.mtw > 0) {
+    $('#submit-btn-' + nr).addClass('disabled');
+    if (ric) $('#rej-btn-' + nr).hide();
+    $('#minutes-' + nr).html(json.mtw);
+    $('#wait-' + nr).show();
+    return;
+  } else {
+    $('#wait-' + nr).hide();
+  }
+  if (ric) {
+    if (json.sub && json.rej && $('#rev-rat-inp-' + nr).val() == '1') {
+      $('#rej-btn-' + nr).show();
+    } else {
+      $('#rej-btn-' + nr).hide();
+    }
+  }
+  if (json.sub) {
+    $('#submit-btn-' + nr).removeClass('disabled');
+    if (ric) $('#rej-btn-' + nr).removeClass('disabled');
+  } else {
+    $('#submit-btn-' + nr).addClass('disabled');
+    if (ric) $('#rej-btn-' + nr).addClass('disabled');
+  }
+}
+
+function setItemRating(r_nr, i_nr, value, ric) {
+  var itap = (ric ? 'rev-' : 'upl-') + r_nr + '-itap-' + i_nr;
+  $('#' + itap + '-mi-' + $('#' + itap + '-inp').val()).removeClass('active');
+  $('#' + itap + '-inp').val(value);
+  $('#' + itap + '-mi-' + value).addClass('active');
+}
+
+function enableItemAppraisal(r_nr, i_nr, ap_str, ric) {
+  var html = '', itap = (ric ? 'rev-' : 'upl-') + r_nr + '-itap-' + i_nr;
+  var icolor = (ric ? 'orange' : 'purple'), ric_tf = (ric ? ',true' : ',false');
+  var ap = ap_str.split(':');
+  if (ap[0] == 'icons' || ap[0] == 'options') {
+    n = ap.length - 1;
+  } else {
+    n = parseInt(ap[1]);
+  }
+  var rating = Math.min(n, parseInt($('#' + itap + '-inp').val()));
+  console.log('ENAB: n = ' + n + '; rating = ' + rating);
+  if (ap[0] == 'rating') {
+    html = '<div id="' + itap + '-rat" class="ui tiny ' + ap[2] + ' rating" data-rating="' + rating +
+        '" data-max-rating="' + n + '"></div>';
+    $('#' + itap).html(html);
+    $('#' + itap + '-rat').rating('setting', 'onRate', function(value) {
+      $('#' + itap + '-inp').val(value);
+    });
+    return;
+  }
+  if (ap[0] == 'likert') {
+    html = '<span style="font-size: small; white-space: nowrap">' + ap[2] +
+           '</span><div class="ui tiny compact black inverted menu">';
+    for (i = 1; i <= n; i++) {
+      html += '<a id="' + itap + '-mi-' + i + '" class="' + (i == rating ? 'active ' : '') +
+              icolor + ' item" style="padding: 0.5em"' + 'onclick="setItemRating(' +
+              r_nr + ',' + i_nr + ',' + i + ric_tf + ');">' + i + '</a>';
+    }
+    html += '</div><span style="font-size: small; white-space: nowrap">' + ap[3] + '</span>';
+    $('#' + itap).html(html);
+    return;
+  }
+  if (ap[0] == 'score') {
+    html = '<div id="' + itap + '-dd" class="ui small compact selection dropdown">' +
+           '<i class="dropdown icon"></i><div class="text">' + rating + '</div><div class="menu">';
+    for (i = 1; i <= n; i++) {
+      html += '<div class="black inverted item" data-value="' + i +
+              '" style="padding-top: 0.25em!important; padding-bottom: 0.25em!important">' +
+              i + '</div>';
+    }
+    html += '</div></div>';
+    $('#' + itap).html(html);
+    $('#' + itap + '-dd').dropdown({
+      onChange: function(value, text, choice) {
+        $('#' + itap + '-inp').val(value);
+      }
+    });
+    return;
+  }
+  if (ap[0] == 'icons') {
+    html = '<div class="ui tiny compact inverted icon menu">';
+    for (i = 1; i <= n; i++) {
+      ic = ap[i].split('=');
+      html += '<a id="' + itap + '-mi-' + i + '" class="' + (i == rating ? 'active ' : '') +
+              ic[1] + ' item" style="padding: 0.5em" onclick="setItemRating(' +
+              r_nr + ',' + i_nr + ',' + i + ric_tf + ');"><i class="' + ic[0] + ' icon"></i></a>';
+    }
+    html += '</div>';
+    $('#' + itap).html(html);
+    return;
+  }
+  if (ap[0] == 'options') {
+    html = '<div id="' + itap + '-dd" class="ui small compact selection dropdown">' +
+           '<i class="dropdown icon"></i><div class="text">' + ap[rating] + '</div><div class="menu">';
+    for (i = 1; i <= n; i++) {
+      html += '<div class="item" data-value="' + i +
+              '" style="padding-top: 0.25em!important; padding-bottom: 0.25em!important">' +
+              ap[i] + '</div>';
+    }
+    html += '</div></div>';
+    $('#' + itap).html(html);
+    $('#' + itap + '-dd').dropdown({
+      onChange: function(value, text, choice) {
+        $('#' + itap + '-inp').val(value);
+      }
+    });
+    return;
+  }
+  $('#' + itap + '-dd').html(html);
+}
+
+function itemAppraisalAsHtml(rating, ap_str) {
+  var html = '', n = 0, ap = ap_str.split(':');
+  if (ap[0] == 'icons' || ap[0] == 'options') {
+    n = ap.length - 1;
+  } else {
+    n = parseInt(ap[1]);
+  }
+  rating = Math.min(n, rating);
+  console.log('n = ' + n + '; rating = ' + rating);
+  if (rating === 0) {
+    html = '<div class="ui horizontal basic grey circular label">?</div>'
+  } else if (ap[0] == 'rating') {
+    var e1 = (ap[2] == 'star' ? '&starf;' : '&heart;');
+    var e2 = (ap[2] == 'star' ? '&star;' : '&heart;');
+    if (n > 0) {
+      html = '<span style="color: black">' + e1.repeat(rating) + '</span>';
+    }
+    if (rating < n) {
+      html += '<span style="color: silver">' + e2.repeat(n - rating) + '</span>';
+    }
+  } else if (ap[0] == 'likert') {
+    html = '<div class="ui horizontal black label">' + rating + '</div>';
+  } else if (ap[0] == 'score') {
+    html = '<div class="ui horizontal black circular label">' + rating + '</div>';
+  } else if (ap[0] == 'icons') {
+    var ic = ap[rating].split('=');
+    html = '<div class="ui large horizontal ' + ic[1] +
+      ' icon label" style="min-width: 1em; padding: 0.4em 0.5em"><i class="' +
+      ic[0] + ' icon" style="margin-right: 0"></i></div>';
+  } else if (ap[0] == 'options') {
+    html = '<div class="ui horizontal black label">' + ap[rating] + '</div>';
+  }
+  return html;
+}
+
+function confirmRejection(nr, lc) {
+  NR_TO_REJECT = nr;
+  $('#confirm-reject-' + lc).modal('show')
+}
+
+function submitRejection() {
+  console.log('REJECT: ' + NR_TO_REJECT);
+  $('#rej-btn-' + NR_TO_REJECT).val(1);
+  $('#rev-form-' + NR_TO_REJECT).submit();
+}
+
+function confirmAppeal(nr, lc) {
+  console.log('confirm appeal: ', nr, lc);
+  NR_TO_APPEAL = nr;
+  $('#confirm-appeal-' + lc).modal('show');
+}
+
+function submitAppeal() {
+  $('#appeal-btn-' + NR_TO_APPEAL).val(1);
+  $('#appr-form-' + NR_TO_APPEAL).submit();
+}
+
+function disableItemAppraisal(r_nr, i_nr, ap_str, ric=true) {
+  var itap=(ric ? 'rev-' : 'upl-') + r_nr + '-itap-' + i_nr;
+  var rating = parseInt($('#' + itap + '-inp').val());
+  $('#' + itap).html(itemAppraisalAsHtml(rating, ap_str));
+}
+
+function updateAppraisalButtons(nr) {
+  console.log('UPDATING APPR BTNS ' + nr);
+  wcnt = parseInt($('#words-appr-' + nr).text().trim());
+  if ($('#appr-inp-' + nr).val() == 3) {
+    $('#appeal-text-' + nr).show();
+    $('#appeal-btn-' + nr).show();
+    $('#appeal-btn-' + nr).addClass('disabled');
+    if (wcnt < 30) {
+      $('#words-appr-' + nr).removeClass('basic');
+    }
+  } else {
+    $('#words-appr-' + nr).addClass('basic');
+    $('#appeal-text-' + nr).hide();
+    $('#appeal-btn-' + nr).hide();  
+  }
+  if ($('#appr-inp-' + nr).val() > 0 && $('#save-btn-appr-' + nr).is(':hidden') &&
+      ($('#appr-type-' + nr).val() > 0 ||
+       document.getElementById('save-btn-imp-' + nr) === null ||
+       $('#save-btn-imp-' + nr).is(':hidden'))) {
+    $('#submit-appr-btn-' + nr).removeClass('disabled');
+    if (wcnt >= 30) {
+      $('#appeal-btn-' + nr).removeClass('disabled');
+    }
+  }
+}
+
+function editAppraisal(nr) {
+  if (quillStillOpen()) return;
+  $('#appeal-btn-' + nr).addClass('disabled');
+  $('#submit-appr-btn-' + nr).addClass('disabled');
+  openQuill('', 'appr-' + nr);
+  $('#appr-btns-' + nr).css('pointer-events', 'initial');
+}
+
+function appraise(nr, a) {
+  console.log('APPRAISING', nr, a);
+  color = ['', 'green', 'yellow', 'red']
+  for (i = 1; i <= 3; i++) {
+    $('#ap' + i + '-' + nr).removeClass(color[i]);
+  }
+  if (a > 0) {
+    $('#ap' + a + '-' + nr).addClass(color[a]);
+  }
+  $('#appr-inp-' + nr).val(a);
+  updateAppraisalButtons(nr);
+}
+
+function saveAppraisal(nr, hex) {
+  console.log('appraisal nr = ' + nr);
+  closeQuill();
+  var obj = {
+    a: 'save appraisal',
+    apt: aptype = $('#appr-type-' + nr).val(),
+    h: hex,
+    ra: $('#appr-inp-' + nr).val(),
+    ac: $('#view-appr-' + nr).html(),
+  };
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        showErrorModal(json.error, obj.ac);
+      } else {
+        if ($('#appr-type-' + nr).val() == 0) {
+          $('#edit-imp-' + nr).hide();
+          $('#appr-btns-' + nr).css('pointer-events', 'none');
+          $('#view-imp-' + nr).show();
+        }
+        updateAppraisalButtons(nr);
+      }
+    }
+  });
+}
+
+function editImprovement(nr) {
+  if (quillStillOpen()) return;
+  $('#appeal-btn-' + nr).addClass('disabled');
+  $('#submit-appr-btn-' + nr).addClass('disabled');
+  openQuill('(optional comments)', 'imp-' + nr);
+  $('#imp-boxes-' + nr).css('pointer-events', 'initial');
+}
+
+function rateImprovement(nr, r) {
+  $('#imp-inp-' + nr).val(r);
+  if (r == 0) {
+    $('#imp-cmnt-' + nr).hide();
+  } else {
+    $('#imp-cmnt-' + nr).show();
+  }
+}
+
+function saveImprovement(nr, hex) {
+  closeQuill();
+  var obj = {
+    a: 'save improvement appraisal',
+    h: hex,
+    ri: $('#imp-inp-' + nr).val(),
+    ic: $('#view-imp-' + nr).html()
+  };
+  console.log(nr, hex, obj);
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        showErrorModal(json.error, obj.ic);
+      } else {
+        $('#imp-boxes-' + nr).css('pointer-events', 'none');
+        updateAppraisalButtons(nr);
+      }
+    }
+  });
+}
+
+function confirmObjection(nr, lc) {
+  NR_TO_OBJECT = nr;
+  $('#confirm-object-' + lc).modal('show')
+}
+
+function submitObjection() {
+  console.log('submit objection', NR_TO_OBJECT);
+  $('#appeal-btn-' + NR_TO_OBJECT).val(1);
+  $('#appr-form-' + NR_TO_OBJECT).submit();
+}
+
+function agreeToReferee(lng, hex, step_nr, case_letter) {
+  REVIEW_HEX = hex;  {# global variable! #}
+  $('#review-case-' + lng).html(case_letter + step_nr);
+  $('#confirm-referee-' + lng).modal('show');
+}
+
+{% if appeal %}
+
+function saveDecision(hex) {
+  closeQuill();
+  var obj = {
+    a: 'save decision',
+    h: hex,
+    dr: $('#dec-rat').rating('get rating'),
+    dm: $('#view-dec').html(),
+    pp: $('#pred-pen-inp').val(),
+    sp: $('#succ-pen-inp').val()
+  };
+  $('#view-decision').html(obj.dm);
+  var ok = true;
+  if (obj.pp == '') {
+    obj.pp = 0;
+  } else if (isNaN(parseFloat(obj.pp))) {
+    $('#pred-pen-inp').css({'border': '2px solid red'});
+    ok = false;
+  }
+  if (obj.sp == '') {
+    obj.sp = 0;
+  } else if (isNaN(parseFloat(obj.sp))) {
+    $('#succ-pen-inp').css({'border': '2px solid red'});
+    ok = false;
+  }
+  if (!ok) {
+    return false;
+  }
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert(json.error, obj.dm);
+      } else {
+        $('#edit-penalty').hide();
+        $('#dec-rat').rating('enable');
+        $('#view-penalty').html(json.pt);
+        $('#view-penalty').show();
+        var wc = $('#view-dec').text().replace(/[\s]+/g, ' ').split(' ').length;
+        if (wc >= {{ appeal.min_words }} && $(parseInt($('#dec-rat-inp').val()) > 0)) {
+          $('#submit-dec-btn').removeClass('disabled');
+        } else {
+          $('#submit-dec-btn').addClass('disabled');
+        }
+        $('#submit-dec-btn').show();
+      }
+    }
+  });
+}
+
+function editDecision() {
+  if (quillStillOpen()) return;
+  $('#view-penalty').hide();
+  $('#submit-dec-btn').hide();
+  $('#dec-rat').rating('enable');
+  openQuill('{{ appeal.lang|phrase:'Motivation_instruction'|safe }}', 'dec');
+  $('#edit-penalty').show();
+}
+
+{% endif %}
+
+
+function showLargeImage(h, t) {
+  $('#large-img').attr('src', 'progress/p/' + h);
+  $('#progress-header').text(t);
+  $('#progress-modal').modal('show');
+}
+
+function promptForAlias(i, h) {
+  $('#alias-dummy').html(i);
+  $('#alias-form').attr('action', 'student/focus/' + h);
+  $('#alias-name').val('');
+  $('#alias-modal').modal('show');
+}
+
+function defocus(h) {
+  window.location.href = 'student/defocus/' + h;
+}
+
+function agreeToPostReview(lng, hex, code) {
+  ASSIGNMENT_HEX = hex;  {# global variable! #}
+  $('#assignment-case-' + lng).html(code);
+  $('#confirm-post-review-' + lng).modal('show');
+}
+
+function toggleList(list) {
+  $('#' + list + '-list').toggle();
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+
+{% if not course_list %}
+  <div class="ui medium header">
+    <i class="info circle icon"></i>
+    <div class="content">
+      You are not enrolled in any course featuring a project relay
+    </div>
+  </div>
+{% else %}
+  <div class="ui {% if estafette_list %}top attached{% endif %} secondary segment" style="padding: 0.5em">
+    <small>You are enrolled in:&nbsp; {{ course_list|safe }}</small>
+  </div>
+
+  {% if estafette_list %}
+    <div class="ui bottom attached tertiary segment" style="padding: 0.5em">
+      <small>You have joined these relays:&nbsp; {{ estafette_list|safe }}</small>
+    </div>
+  {% endif %}
+
+  {% if appeal %}
+    {# NOTE: since users can referee at most ONE appeal at a time, the appeal segment is unique; #}
+    {# hence, non part or task numbering of DIVs or buttons #}
+    <h2 class="ui header">
+      <img class="ui small image" src="{% static 'presto/images/referee.png' %}">
+      <div class="content">
+        {{ appeal.lang|phrase:'Referee_task'|safe }} {{ appeal.estafette_title|safe }}
+      </div>
+    </h2>
+    <div class="ui segments" lang="{{ appeal.lang.code }}">
+      <div class="ui segment">
+        <div class="ui grid">
+          <div class="fourteen wide column">
+            <p>{{ appeal.estafette_period|safe }}</p>
+            <div class="ui large {{ appeal.color }} ribbon label">
+                {{ appeal.lang|phrase:'Deadline_for_decision' }}:
+            </div>
+            <span style="font-weight: 600">{{ appeal.deadline }}</span>
+          </div>
+          <div class="two wide column">
+            <div id="info-btn-appeal" class="ui tiny right floated blue circular icon button"
+                 onclick="toggleInfo('appeal');">
+              <i class="info icon"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="info-appeal" class="ui secondary segment" style="font-size: small; display: none">
+        {{ appeal.estafette_desc|safe }}
+      </div>
+      <div class="ui grey inverted segment">
+        <h4 class="ui header">
+          <i class="law icon"></i>
+          <div class="content">
+            {{ appeal.lang|phrase:'Decide_on_this_appeal' }}
+          </div>
+        </h4>
+      </div>
+      <div class="ui segment">
+        <div class="ui segments">
+          <div class="ui secondary clearing segment">
+            {{ appeal.case_title }}
+            <a class="ui mini circular icon button" onclick="toggleInfo('ap-case');">
+              <i class="chevron down icon"></i>
+            </a>
+          </div>
+          {% if appeal.case_hex %}
+            <div id="ap-case-file" class="ui secondary segment" hidden="hidden">
+              {{ appeal.lang|phrase:'Case_has_attachment' }}
+              <a class="ui tiny black button" href="download/case/{{ appeal.case_hex }}"
+                 style="margin-left: 2em">
+                <i class="download icon"></i>
+                {{ appeal.lang|phrase:'Download' }}
+              </a>
+            </div>
+          {% endif %}
+          <div id="info-ap-case" class="ui segment" hidden="hidden">
+            {{ appeal.case_desc|safe }}
+          </div>
+        </div>
+        <div class="ui small header">
+          {{ appeal.step_title }}
+        </div>
+        {{ appeal.step_desc|safe }}
+        <div class="ui small compact stackable menu">
+          <div class="header item">
+            {{ appeal.lang|phrase:'Predecessor_work' }}:
+          </div>
+          {% for f in appeal.pred_file_list %}
+            <a class="item" href="download/ref/{{ f.name }}/{{ appeal.pred_hex }}" target="_blank">
+              {{ f.prompt }}
+            </a>
+          {% endfor %}
+          {% if appeal.pred_file_list|length > 1 %}
+            <a class="item" href="download/ref/all-zipped/{{ appeal.pred_hex }}" target="_blank">
+              <i class="file archive outline icon"></i>
+              {{ appeal.lang|phrase:'Download_all' }}
+            </a>
+          {% endif %}
+        </div>
+        <div class="ui orange secondary segment">
+          <div class="ui small header">
+            <i class="empty star icon"></i>
+            <div class="content"{% if appeal.show_names %} data-tooltip="{{ appeal.reviewer }}"{% endif %}>
+              {{ appeal.lang|phrase:'Successor_review' }}
+            </div>
+          </div>
+          {% if appeal.rev_items|length > 0 %}
+            <p><strong><em>{{ appeal.lang|phrase:'Specific_review_items' }}</em></strong></p>
+            {% for ri in appeal.rev_items %}
+              <div>
+                <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                
+                <div id="appeal-itap-{{ ri.item.number }}"
+                     style="display: inline-block; margin-left: 1em">
+                </div>
+              </div>
+              <div style="font-size: small">
+                {{ ri.item.instruction|safe }}
+              </div>
+              {{ ri.comment|safe }}
+            {% endfor %}
+            <p><strong><em>{{ appeal.lang|phrase:'Overall_review' }}</em></strong></p>
+          {% endif %}
+          {{ appeal.review.grade_motivation|safe }}
+          <label><strong>{{ appeal.lang|phrase:'Review_rating' }}:</strong></label>
+          <div id="appeal-rev-rat" class="ui star rating"
+               data-rating="{{ appeal.review.grade }}" data-max-rating="5">
+          </div>
+          {% if appeal.review.is_rejection %}
+            <div class="ui raised segment">
+              <div class="ui small header">
+                <i class="thumbs down icon"></i>
+                <div class="content">
+                  {{ appeal.lang|phrase:'Successor_rejected' }}
+                </div>
+              </div>
+            </div>
+          {% endif %} 
+        </div>
+        <div class="ui violet secondary segment">
+          <div class="ui small header">
+            <i class="pointing up icon"></i>
+            <div class="content"{% if appeal.show_names %} data-tooltip="{{ appeal.author }}"{% endif %}>
+              {{ appeal.lang|phrase:'Predecessor_appealed_on' }} {{ appeal.time_appealed }}
+            </div>
+          </div>
+          {{ appeal.review.appraisal_comment|safe }}
+          {% if appeal.review.improvement_appraisal %}
+            <div class="ui small header">
+              {{ appeal.imp_opinion|safe }}
+            </div>
+            {{ appeal.review.improvement_appraisal_comment|safe }}
+          {% elif not appeal.is_rejection %}
+            <p>
+              {{ appeal.lang|phrase:'No_pred_comment' }}
+            </p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="ui grey segment">
+        <div class="ui small header">
+          {{ appeal.lang|phrase:'Appeal_decision_task' }}
+        </div>
+        {{ appeal.lang|phrase:'Appeal_decision_rules'|safe }}
+        <form id="dec-form" class="ui form" method="post" action="student/decide/{{ appeal.hex }}"
+              style="margin-top: 1em">
+          <div class="ui form" >
+            <div class="field">
+              <label>{{ appeal.lang|phrase:'Your_consideration' }}</label>
+              <div id="edit-dec">
+              </div>
+              <div id="save-msg-dec" style="display: none; color: rgb(220, 0, 0)">
+                &uarr; {{ appeal.lang|phrase:'Please_save_this' }} &uarr;
+              </div>
+              <div id="view-dec" class="ui grey secondary segment">
+                {{ appeal.object.grade_motivation|safe }}
+              </div>
+              <div class="ui basic clearing segment" style="margin: -1em -1em">
+                <div id="words-dec" class="ui{% if appeal.words >= appeal.min_words %} basic{% endif %} black horizontal label">
+                  {{ appeal.words }}
+                </div>
+                &larr;
+                <em>
+                  {{ appeal.lang|phrase:'Wordcount_left' }}
+                  <span id="min-words-dec">
+                    {{ appeal.min_words }}
+                  </span>
+                  {{ appeal.lang|phrase:'Wordcount_right' }}
+                </em>
+              </div>
+              <div class="ui basic clearing segment" style="margin: -1em">
+                <label><strong>{{ appeal.lang|phrase:'Your_rating_of_pred_work' }}:</strong></label>
+                <div id="dec-rat" class="ui star rating"
+                     data-rating="{{ appeal.object.grade }}" data-max-rating="5"></div>
+              </div> 
+            </div>
+            <div id="edit-penalty">
+              <div class="inline fields">
+                <div class="eight wide field">
+                  <label>{{ appeal.lang|phrase:'Predecessor_penalty'|safe }}</label>
+                  <input id="pred-pen-inp" name="pred-pen" style="width:4em"
+                         value="{{ appeal.object.predecessor_penalty }}" type="text">
+                </div>
+                <div class="eight wide field">
+                  <label>{{ appeal.lang|phrase:'Successor_penalty'|safe }}</label>
+                  <input id="succ-pen-inp" name="succ-pen" style="width:4em"
+                         value="{{ appeal.object.successor_penalty }}" type="text">
+                </div>
+              </div>
+              <p style="margin-bottom: 0.5em"><em>{{ appeal.lang|phrase:'Half_point_scale' }}</em></p>
+            </div>
+            <div id="view-penalty" style="margin-bottom: 0.5em">
+              {{ appeal.penalties_as_text|safe }}
+            </div>
+            <div class="ui basic clearing segment" style="margin: -1em">
+              <div id="save-btn-dec" class="ui left floated grey basic labeled icon button"
+                   onclick="saveDecision('{{ appeal.hex }}');">
+                <i class="check square icon"></i>
+                {{ appeal.lang|phrase:'Save_decision' }}
+              </div>
+              <div id="edit-btn-dec" class="ui left floated grey basic labeled icon button"
+                   onclick="editDecision();">
+                <i class="edit icon"></i>
+                {{ appeal.lang|phrase:'Edit_decision' }}
+              </div>
+              <button id="submit-dec-btn" type="submit" class="ui disabled grey labeled icon button">
+                <i class="law icon"></i>
+                {{ appeal.lang|phrase:'Pronounce_decision' }}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  {% elif not participations %}
+
+    <h2 class="ui header">
+      <i class="inbox icon"></i>
+      <div class="content">
+        {{ No_tasks_to_do }}
+      </div>
+    </h2>
+
+  {% endif %}
+
+  {# display list of appeals (if any) that user may referee #}
+  {% if ce_appeals or ce_decisions %}
+    <h2 class="ui header">
+      <img class="ui small image" src="{% static 'presto/images/referee.png' %}">
+      <div class="content">
+        {% if languages|length > 1 %}
+          {% if ce_appeals %}
+            You are invited to act as referee
+          {% else %}
+            You are qualified to act as referee
+          {% endif %}
+        {% else %}
+          {% if ce_appeals %}
+            {{ languages.0|phrase:'Invite_to_referee' }}
+          {% else %}
+            {{ languages.0|phrase:'Qualified_to_referee' }}
+          {% endif %}
+        {% endif %}
+      </div>
+    </h2>
+    <div class="ui segments">
+    {% if ce_appeals %}
+      <div class="ui yellow inverted segment">
+        <h3 class="ui header">
+          <i class="pointing up icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              Appeals that are still unassigned
+            {% else %}
+              {{ languages.0|phrase:'Unassigned_appeals' }}
+            {% endif %} (N = {{ total_appeals }})
+          </div>
+        </h3>
+      </div>
+      <div class="ui basic segment">
+       {% for ce in ce_appeals %}
+        <h4 class="ui header">
+          <i class="checkered flag icon"></i>
+          <div class="content" style="width: 100%">
+            {{ ce.estafette_title|safe }}
+            <span style="margin-left: 1em; font-weight: 500">(N = {{ ce.appeals|length }})</span>
+            <div class="ui mini black right floated horizontal button"
+                 onclick="toggleList('appeal-' + {{ ce.nr }});">
+              Show/hide list
+            </div>
+          </div>
+          <div class="sub header">
+            <em>{{ ce.next_deadline.label }}:</em> {{ ce.next_deadline.time }}
+          </div>
+        </h4>
+        <div id="appeal-{{ ce.nr }}-list" class="ui fluid vertical menu">
+          {% for a in ce.appeals %}
+            {% with ra=a.review.assignment %}
+              <a class="item"
+                 onclick="agreeToReferee('{{ ce.lang.code }}', '{{ a.hex }}', '{{ ra.leg.number }}', '{{ ra.case.letter }}');">
+                <div class="ui small {{ a.color }} label"{% if a.show_names %} data-tooltip="{{ a.author_name }}" data-position="top right"{% endif %}>
+                  {{ a.time }}
+                </div>
+                <span class="a-code"{% if a.low_prio %} style="background-color: Silver"{% endif %}>{{ a.code }}</span>
+                {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
+              </a>
+            {% endwith%}
+          {% endfor %}
+        </div>
+       {% endfor %}
+      </div>
+      <div class="ui grey inverted segment">
+        <h5 class="ui header">
+          <i class="warning sign icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              <strong>NOTE:</strong> You should only commit to refereeing an appeal if you can do this within 24 hours!
+            {% else %}
+              {{ languages.0|phrase:'Appeal_list_caution'|safe }}
+            {% endif %}
+          </div>
+        </h5>
+      </div>
+    {% endif %}
+    {% if ce_decisions %}
+      <div class="ui grey inverted segment">
+        <h3 class="ui header">
+          <i class="law icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              Appeals that you have decided on
+            {% else %}
+              {{ languages.0|phrase:'Decided_appeals' }}
+            {% endif %} (N = {{ total_decisions }})
+          </div>
+        </h3>
+      </div>
+      <div class="ui basic segment">
+       {% for ce in ce_decisions %}
+        <h4 class="ui header">
+          <i class="checkered flag icon"></i>
+          <div class="content" style="width: 100%">
+            {{ ce.estafette_title|safe }}
+            <span style="margin-left: 1em; font-weight: 500">(N = {{ ce.appeals|length }})</span>
+            <div class="ui mini black right floated horizontal button"
+                 onclick="toggleList('decision-' + {{ ce.nr }});">
+              Show/hide list
+            </div>
+          </div>
+          <div class="sub header">
+            <em>{{ ce.next_deadline.label }}:</em> {{ ce.next_deadline.time }}
+          </div>
+        </h4>
+        <div id="decision-{{ ce.nr }}-list" class="ui fluid vertical menu">
+          {% for a in ce.appeals %}
+            {% with ra=a.appeal.review.assignment %}
+              <a class="item"
+                 onclick="showDecisionModal('{{ ce.lang.code }}', '{{ a.hex }}');">
+                <div class="ui small {{ a.color }} label"{% if a.show_names %} data-tooltip="{{ a.author_name }} versus {{ a.reviewer_name }}" data-position="top right"{% endif %}>
+                  {{ a.time }}
+                </div>
+                <span class="a-code" style="background-color: Silver">{{ a.code }}</span>
+                {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
+              </a>
+            {% endwith%}
+          {% endfor %}
+        </div>
+       {% endfor %}
+      </div>
+    {% endif %}
+    </div>
+  {% endif %}
+  
+  {# display assignments of a terminated estafette that still require review #}
+  {% if instructor_estafettes %}
+    <h2 class="ui header">
+      <i class="student icon"></i>
+      <div class="content">
+        {% if languages|length > 1 %}
+          Some assignments still need to be reviewed
+        {% else %}
+          {{ languages.0|phrase:'Invite_to_post_review' }}
+        {% endif %}
+      </div>
+    </h2>
+    <div class="ui segments">
+      <div class="ui orange inverted segment">
+        <h3 class="ui header">
+          <i class="student icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              Assignments requiring an instructor review
+            {% else %}
+              {{ languages.0|phrase:'Unassigned_assignments' }}
+            {% endif %} (N = {{ total_post_reviews }})
+          </div>
+        </h3>
+      </div>
+      <div class="ui basic segment">
+       {% for ie in instructor_estafettes %}
+        <h4 class="ui header">
+          <i class="checkered flag icon"></i>
+          <div class="content" style="width: 100%">
+            {{ ie.estafette_title|safe }}
+            <span style="margin-left: 1em; font-weight: 500">
+              (N = {{ ie.post_reviews|length }})
+            </span>
+            <div class="ui mini black right floated horizontal button"
+                 onclick="toggleList('post-review-' + {{ ie.nr }});">
+              Show/hide list
+            </div>
+          </div>
+          <div class="sub header">
+            <em>{{ ie.next_deadline.label }}:</em> {{ ie.next_deadline.time }}
+          </div>
+        </h4>
+        <div id="post-review-{{ ie.nr }}-list" class="ui fluid vertical menu">
+          {% for pr in ie.post_reviews %}
+            <a class="item"
+               onclick="agreeToPostReview('{{ ie.lang.code }}', '{{ pr.hex }}', '{{ pr.code }}');">
+              <div class="ui small black label" data-tooltip="{{ pr.author_name }}">
+                {{ pr.time }}
+              </div>
+              <span class="a-code" style="margin-right: 1em">{{ pr.code }}</span>
+              {{ pr.case_name|safe }}
+              <span style="color: gray; font-size: 80%">({{ pr.step_name|safe }})</span>
+            </a>
+          {% endfor %}
+        </div>
+       {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+  
+  {# display task list for each estafette in which user is participating #}
+  {% for p in participations %}
+  
+    {# start with a pretty big header -- the circular icon is used for emphasis #}
+    <h2 class="ui header" lang="{{ p.lang.code }}">
+      <i class="circular checkered flag icon"></i>
+      <div class="content">
+        {{ p.object.estafette.title|safe }}
+
+        {# OPTIONAL: provide a link to the genaral PRESTO introduction video on YouTube #}
+        {% if p.object.estafette.with_review_clips %}
+          <a class="ui black label" href="{{ intro_video.url }}" target="_blank">
+            <img class="ui right spaced avatar image" src="{% static 'presto/images/vignette-' %}{{ intro_video.presenter_initials|lower }}.png">
+            Infoclip
+            <i class="video icon"></i>
+          </a>
+        {% endif %}
+        
+        {# for demonstration users, show their alias, rather than the user name (which is always the same) #}
+        {% if alias %}
+          <span style="margin-left: 0.5em; margin-right: 2em; font-weight: 500">({{ alias }})</span>
+          {% if p.can_defocus %}
+            <button class="ui mini circular blue icon button" onclick="defocus('{{ p.hex }}');">
+              <i class="unlock alternate icon"></i>
+            </button>
+          {% endif %}
+          
+        {# for participants that are "run" by an instructor, show their index number #}
+        {% elif p.object.student.dummy_index > 0 %}
+          <span style="margin-left: 0.5em; margin-right: 2em; font-weight: 500; font-size: 60%">
+            ("dummy" # {{ p.object.student.dummy_index }})
+          </span>
+          {% if p.can_focus %}
+            <button class="ui mini circular blue icon button"
+                    onclick="promptForAlias('{{ p.object.student.dummy_index }}', '{{ p.hex }}');">
+              <i class="lock icon"></i>
+            </button>
+          {% endif %}
+        {% elif p.object.student.dummy_index < 0 %}
+          <span style="margin-left: 0.5em; margin-right: 2em; font-weight: 500; font-size: 60%">
+            {% if p.object.student.user == p.object.student.course.manager %}
+             (course manager)
+            {% else %}
+              (instructor)
+            {% endif %}
+          </span>
+        {% endif %}
+      </div>
+    </h2>
+
+    {# display relay properties, progress bar, progress chart, and info button #}
+    <div class="ui segments" lang="{{ p.lang.code }}">
+      <div class="ui segment">
+        <div class="ui grid">
+          <div class="eleven wide column">
+            <p>
+              {{ p.lang|phrase:'Runs_from' }}&nbsp; {{ p.start }}&nbsp;
+              {{ p.lang|phrase:'through' }}&nbsp; {{ p.end }}.
+            </p>
+            <div class="ui large {{ p.next_deadline.color }} ribbon label">
+              <em>{{ p.next_deadline.label }}:</em>
+              <span style="font-size: larger; text-shadow: 1px 0px black; margin-left: 1em">
+                {{ p.next_deadline.time }}
+              </span>
+            </div>
+
+    {# INTERMEZZO: progress bar #}
+    {% if p.things_to_do.0.assigned %}
+      <div class="ui basic segment" style="white-space: nowrap; padding: 0">
+        <div style="display: inline-block; background: rgb(235,235,235); white-space: nowrap; padding: 4px; border: 1px solid rgb(235,235,235); border-radius: 4px 0 0 4px; height: 2.2em">  
+          <div class="ui olive circular label" data-tooltip="{{ p.things_to_do.0.assigned_tip }}" data-inverted="">&#9654;</div>
+          {% for t in p.things_to_do %}
+            {% if t.step %}
+              {% if t.step > 1 and t.assigned %}
+                <div class="ui mini olive circular label" data-tooltip="{{ t.assigned_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></div>
+              {% endif %}
+              {% if t.downloaded %}
+                <div class="ui mini blue circular label" data-tooltip="{{ t.downloaded_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></div>
+              {% endif %}
+              {% if t.reviewed %}
+                <div class="ui mini orange circular label" data-tooltip="{{ t.reviewed_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></div>
+              {% endif %}
+              {% if t.uploaded %}
+                <div class="ui purple circular label" data-tooltip="{{ t.uploaded_tip }}" data-inverted="">{{ t.step }}</div>
+              {% endif %}
+            {% elif t.review %}
+              {# final review #}
+              {% if t.downloaded %}
+                <div class="ui mini blue circular label" data-tooltip="{{ t.downloaded_tip }} " data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></div>
+              {% endif %}
+              {% if t.reviewed %}
+                <div class="ui orange circular label" data-tooltip="{{ t.reviewed_tip }}" data-inverted="">&star;</div>
+              {% endif %}
+            {% elif t.finish %}
+              <a class="ui big label" onclick="document.getElementById('rh-finish').scrollIntoView();" data-tooltip="Finish @ {{ t.finish }}" data-inverted="" style="padding: 0 !important; min-height: 15px">
+                <i class="checkered flag icon" style="margin-right: 0 !important"></i>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% with p.things_to_do|last as last_thing %}{% if not last_thing.finish %}
+        <div style="display: inline-block; white-space: nowrap; padding: 4px; margin-left:-2px; border: 1px solid rgb(235,235,235); border-radius: 0 4px 4px 0; height: 2.2em; margin-left: -4px">  
+          {% for t in p.things_to_do %}
+            {% if t.step %}
+              {% if t.step > 1 and not t.assigned %}
+                <div class="ui mini basic olive circular label" data-tooltip="{{ t.assigned_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if t.step > 1 and not t.downloaded %}
+                <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if t.step > 1 and not t.reviewed %}
+                <div class="ui mini basic orange circular label" data-tooltip="{{ t.reviewed_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if not t.uploaded %}
+                <div class="ui basic purple circular label" data-tooltip="{{ t.uploaded_tip }}">{{ t.step }}</div>
+              {% endif %}
+            {% elif t.review %}
+              {# final review #}
+              {% if not t.downloaded %}
+                <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }} " style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if not t.reviewed %}
+                <div class="ui basic orange circular label" data-tooltip="{{ t.reviewed_tip }}">&star;</div>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}{% endwith %}
+      </div>
+    {% endif %}
+
+          </div> {# end of eleven wide column DIV #}
+          <div class="one wide column">
+            <div id="info-btn-{{ p.nr }}" class="ui tiny right floated blue circular icon button"
+                 onclick="toggleInfo('{{ p.nr }}');">
+              <i class="info icon"></i>
+            </div>
+          </div>
+          <div class="four wide column">
+            <img class="ui medium image" src="progress/p/{{ p.hex }}"
+                 onclick="showLargeImage('{{ p.hex }}', '{{ p.lang|phrase:'Progress_chart' }}');" />
+          </div>
+        </div>
+      </div>
+      <div id="info-{{ p.nr }}" class="ui secondary segment" style="font-size: small; display: none">
+        {{ p.desc|safe }}
+      </div>
+      {% if p.rules %}
+        <div class="ui segment">
+          {{ p.rules|safe }}
+          <div style="margin-bottom: 1em">
+            <div class="ui checkbox">
+              <input type="checkbox" onclick="toggleCommit({{ p.nr }});">
+              <label id="commit-{{ p.nr }}-lbl">{{ p.lang|phrase:'Commit_to_rules' }}</label>
+            </div>
+          </div>
+          <a id="commit-{{ p.nr }}-btn" class="ui disabled primary labeled icon button"
+             href="student/start/{{ p.hex }}">
+            <i class="play icon"></i>
+            Start
+          </a>    
+        </div>
+      {% elif p.Final_reviews %}
+        <div class="ui orange inverted segment">
+          <div class="ui header">
+            <i class="star icon"></i>
+            <div class="content">
+              {{ p.Final_reviews|safe }}
+            </div>
+          </div>
+        </div>
+        <div class="ui segment">
+          <div class="ui small header">
+            {{ p.final_reviews_to_do|safe }}
+          </div>
+        </div>
+        <div class="ui tertiary clearing segment">
+          <a class="ui left floated orange labeled icon button"
+             style="margin-right: 1em" href="student/proceed/{{ p.hex }}">
+            <i class="arrow circle right icon"></i>
+            {{ p.lang|phrase:'Proceed' }}
+          </a>
+          <span>{{ p.lang|phrase:'Only_when_you_can'|safe }}</span>
+        </div>
+      {% elif p.no_final_reviews %}
+        <div class="ui orange inverted segment">
+          <div class="ui header">
+            <i class="wait icon"></i>
+            <div class="content">
+              {{ p.no_final_reviews }}
+            </div>
+          </div>
+        </div>
+        <div class="ui segment">
+          <div class="ui small header">
+            {{ p.final_reviews_to_do|safe }}
+          </div>
+          <p>{{ p.lang|phrase:'Frontrunner' }}</p>
+          <p>{{ p.lang|phrase:'Please_wait' }}</p>
+          <p>{{ p.lang|phrase:'Keep_logging_on'|safe }}</p>
+        </div>
+      {% else %}
+        {% if p.Finished %}
+        <div class="ui teal inverted segment">
+          <div class="ui header">
+            <i class="checkered flag icon"></i>
+            <div class="content">
+              {{ p.Finished }}
+            </div>
+          </div>
+        </div>
+        <div class="ui segment">
+          <div class="ui small header">
+            {{ p.lang|phrase:'Congratulations' }}
+          </div>
+          <p>{{ p.lang|phrase:'You_have_finished' }}</p>
+          <p>{{ p.lang|phrase:'Keep_logging_on'|safe }}</p>
+        </div>
+        {% elif p.Past_deadline %}
+        <div class="ui black inverted segment">
+          <div class="ui header">
+            <i class="delete calendar icon"></i>
+            <div class="content">
+              {{ p.Past_deadline }}
+            </div>
+          </div>
+        </div>
+        <div class="ui segment">
+          <div class="ui small header">
+            {{ p.lang|phrase:'Cannot_finish' }}
+          </div>
+          <p>{{ p.lang|phrase:'Keep_logging_on'|safe }}</p>
+        </div>
+        {% endif %}
+    {# separate primary from secondary tasks #}
+    {% if p.tasks %}
+    </div>
+    <div class="ui segments">
+    {% endif %}
+      {% endif %}
+      {# NOTE: Even when finished, participants may still have to do tasks! #}
+      {% for t in p.tasks %}
+        <div class="ui {{ t.color }} inverted segment">
+          <div class="ui header">
+            <i class="{{ t.icon }} icon"></i>
+            <div class="content">
+              {{ t.header|safe }}
+              {% if t.selfie %}&nbsp;&nbsp;({{ p.lang|phrase:'Self_review' }}){% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="ui segment">
+          {% if t.case_title %}
+            <div class="ui top attached secondary segment">
+              <strong>{{ t.case_title }}</strong>
+            </div>
+            <div class="ui {% if not t.case_hex %}bottom {% endif %}attached segment">
+              {{ t.case|safe }}
+            </div>
+            {% if t.case_hex %}
+              <div class="ui bottom attached secondary segment">
+                <em><strong>{{ p.lang|phrase:'Case_has_attachment' }}</strong></em>
+                <a class="ui tiny black button" href="download/case/{{ t.case_hex }}"
+                   style="margin-left: 2em">
+                  <i class="download icon"></i>
+                  {{ p.lang|phrase:'Download' }}
+                </a>
+              </div>
+            {% endif %}
+          {% endif %}
+          {% if t.type == 'REVIEW' %}
+            <h2 class="ui small header">
+              {{ p.lang|phrase:'Predecessor_task' }}
+            </h2>
+            {{ t.desc|safe }}
+            {% if t.file_list %}
+              <div class="ui compact stackable {{ t.color }} inverted menu">
+                <div class="header item">
+                  {{ p.lang|phrase:'View_pred_work' }}:
+                </div>
+                {% for f in t.file_list %}
+                  <a class="item" href="download/pre/{{ f.name }}/{{ t.hex }}" target="_blank">
+                    {{ f.prompt }}
+                  </a>
+                {% endfor %}
+                {% if t.file_list|length > 1 %}
+                  <a class="item" href="download/pre/all-zipped/{{ t.hex }}" target="_blank">
+                    <i class="file archive outline icon"></i>
+                    {{ p.lang|phrase:'Download_all' }}
+                  </a>
+                {% endif %}
+              </div>
+            {% endif %}
+          {% else %}
+            {% if t.type != 'DOWNLOAD' %}
+              <div class="ui small header">
+                {% if t.your_task %}
+                  {{ t.your_task|safe }}
+                {% else %}
+                  {{ p.lang|phrase:'Your_task'|safe }}
+                {% endif %}
+              </div>
+              {{ t.desc|safe }}
+            {% endif %}
+            {% if t.peer_review %}
+              <div class="ui compact stackable menu">
+                <div class="header item">
+                  {{ p.lang|phrase:'View_own_work' }}:
+                </div>
+                {% for f in t.own_file_list %}
+                  <a class="item" href="download/{{ f.name }}/{{ t.own_hex }}" target="_blank">
+                    {{ f.prompt }}
+                  </a>
+                {% endfor %}
+                {% if t.own_file_list|length > 1 %}
+                  <a class="item" href="download/all-zipped/{{ t.own_hex }}" target="_blank">
+                    <i class="file archive outline icon"></i>
+                    {{ p.lang|phrase:'Download_all' }}
+                  </a>
+                {% endif %}
+              </div>
+            {% elif t.appraised_review %}
+              <div class="ui secondary segment">
+                <div class="ui small header">
+                  {{ p.lang|phrase:'Your_review' }}
+                  {% if t.appraised_review.assignment.is_selfie %}
+                    <span style="font-weight: normal">({{ p.lang|phrase:'Self_review' }})</span>
+                  {% endif %}
+                </div>
+                {% if t.rev_items|length > 0 %}
+                  <p><strong><em>{{ p.lang|phrase:'Specific_review_items' }}</em></strong></p>
+                  {% for ri in t.rev_items %}
+                    <div>
+                      <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                      <div id="app-rev-{{ p.nr }}-{{ t.nr }}-itap-{{ ri.item.number }}"
+                           style="display: inline-block; margin-left: 1em">
+                      </div>
+                    </div>
+                    <div style="font-size: small">
+                      {{ ri.item.instruction|safe }}
+                    </div>
+                    {{ ri.comment|safe }}
+                  {% endfor %}
+                  <p><strong><em>{{ p.lang|phrase:'Overall_review' }}</em></strong></p>
+                {% endif %}
+                {{ t.appraised_review.grade_motivation|safe }}
+                <label><strong>{{ p.lang|phrase:'Your_rating' }}:</strong></label>
+                <div id="app-rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
+                     data-rating="{{ t.appraised_review.grade }}" data-max-rating="5">
+                </div>
+                {% if t.appraised_review.is_rejection %}
+                  <div class="ui raised segment">
+                    <div class="ui small header">
+                      <i class="thumbs down icon"></i>
+                      <div class="content">
+                        {{ p.lang|phrase:'You_rejected' }}
+                      </div>
+                    </div>
+                  </div>
+                {% endif %} 
+              </div>
+              <div class="ui {{ t.color }} secondary segment">
+                <div class="ui small header">
+                  <i class="{{ t.app_icon }} icon"></i>
+                  <div class="content">
+                    {{ t.app_header }}
+                  </div>
+                </div>
+                {{ t.appraised_review.appraisal_comment|safe }}
+                {% if t.appraised_review.is_appeal %}
+                  <div class="ui raised segment">
+                    <div class="ui small header">
+                      <i class="pointing up icon"></i>
+                      <div class="content">
+                        {{ p.lang|phrase:'Predecessor_appealed' }}
+                      </div>
+                    </div>
+                  </div>
+                {% endif %} 
+              </div>
+              {% if not t.is_final %}  {# skip this part for final reviews #}
+                {% if t.appraised_review.improvement_appraisal %}
+                  <div class="ui {{ t.color }} secondary segment">
+                    <div class="ui small header">
+                      {{ t.imp_opinion|safe }}
+                    </div>
+                    {{ t.appraised_review.improvement_appraisal_comment|safe }}
+                  </div>
+                {% elif not t.appraised_review.is_rejection %}
+                  <p>{{ p.lang|phrase:'No_comment' }}</p>
+                {% endif %}
+              {% endif %}
+              <a class="ui {{ t.color }} labeled icon button" href="student/acknowledge/{{ t.hex }}">
+                <i class="{{ t.icon }} icon"></i>
+                OK
+              </a>
+            {% endif %}  {# task relates to peer review #}
+          {% endif %}
+        </div>
+        {# end of task description segment #}
+
+        {# what is shown next depends on type of task#}
+        {% if t.type == 'DOWNLOAD' %}  
+          {% if t.may_decline %}
+            <div id="decl-seg-{{ p.nr }}-{{ t.nr }}" class="ui inverted black clearing segment">
+              <a class="ui left floated labeled icon button"
+                 style="margin-right: 1em" href="student/decline/{{ p.hex }}">
+                <i class="arrow circle left icon"></i>
+                {{ p.lang|phrase:'Decline' }}
+              </a>
+              <span>
+                {% if t.selfie %}
+                  {{ p.lang|phrase:'Selfie_decline'|safe }}
+                {% else %}
+                  {{ p.lang|phrase:'You_may_decline'|safe }}
+                {% endif %}
+              </span>
+            </div>
+          {% endif %}
+          <div class="ui {{ t.color }} segment"{% if t.may_decline %}
+               data-tooltip="{{ p.lang|phrase:'Decline_caution' }}"{% endif %}>
+            <div class="ui compact stackable inverted {{ t.color }} menu">
+              <div class="header item">
+                {{ p.lang|phrase:'View_pred_work' }}:
+              </div>
+              {% for f in t.file_list %}
+                <a class="item" href="download/pre/{{ f.name }}/{{ t.hex }}"
+                   target="_blank" onclick="enableProceed('{{ p.nr }}-{{ t.nr }}');">
+                  {{ f.prompt }}
+                </a>
+              {% endfor %}
+              {% if t.file_list|length > 1 %}
+                <a class="item" href="download/pre/all-zipped/{{ t.hex }}"
+                   target="_blank" onclick="enableProceed('{{ p.nr }}-{{ t.nr }}');">
+                  <i class="file archive outline icon"></i>
+                  {{ p.lang|phrase:'Download_all' }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+          <div class="ui tertiary clearing segment">
+            {% if t.too_late %}
+              <strong>{{ t.too_late|safe}}</strong>
+            {% else %}
+              <a id="proceed-btn-{{ p.nr }}-{{ t.nr }}"
+                 class="ui {% if not t.did_download %}disabled {%endif%}left floated {{ t.color }} labeled icon button"
+                 style="margin-right: 1em" href="student/proceed/{{ p.hex }}">
+                <i class="arrow circle right icon"></i>
+                {{ p.lang|phrase:'Proceed' }}
+              </a>
+              <span>{{ p.lang|phrase:'Download_first'|safe }}</span>
+            {% endif %}
+          </div>
+        {% elif t.type == 'UPLOAD' %}
+          {% if t.rev_instr %}
+          <div class="ui {{ t.color }} secondary segment">
+            <div class="ui grid">
+              <div class="thirteen wide column">
+                {{ p.lang|phrase:'View_review_instructions' }}
+              </div>
+              <div class="three wide column">
+                <a id="show-instr-btn-{{ p.nr }}-{{ t.nr }}"
+                   class="ui tiny {{ t.color }} icon button"
+                   onclick="showReviewInstructions('{{ p.nr }}-{{ t.nr }}');">
+                  {{ p.lang|phrase:'Show' }}
+                  <i class="unhide icon"></i>
+                </a>
+                <a id="hide-instr-btn-{{ p.nr }}-{{ t.nr }}"
+                   class="ui tiny basic {{ t.color }} icon button"
+                   style="display: none" onclick="hideReviewInstructions('{{ p.nr }}-{{ t.nr }}');">
+                  {{ p.lang|phrase:'Hide' }}
+                  <i class="hide icon"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          <div id="rev-instr-{{ p.nr }}-{{ t.nr }}" class="ui segment" style="display: none">
+            {{ t.rev_instr|safe }}
+          </div>
+          <div class="ui {{ t.color }} segment">
+            <div class="ui small header">
+              {{ p.lang|phrase:'Submit_work' }}
+            </div>
+            {{ t.instr|safe }}
+            {% for ui in t.upl_items %}
+            <div class="ui {{ t.color }} segment">
+              <div class="ui grid">
+                <div class="thirteen wide column">
+                  <div><strong>{{ ui.item.number }}. {{ ui.item.name }}</strong></div>
+                  <div style="font-size: inherit; margin-bottom: 0.5em">
+                    {{ ui.item.instruction|safe }}
+                  </div>
+                  {% if ui.no_comment %}
+                    <em>{{ p.lang|phrase:'No_comment_needed' }}</em>
+                  {% else %}
+                    <div id="edit-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}">
+                      {# will be filled by openQuill(...) #}
+                    </div>
+                    <div id="save-msg-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}"
+                         style="display: none; color: rgb(220, 0, 0)">
+                      &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                    </div>
+                    <div id="view-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}"
+                         class="ui secondary segment"
+                         style="margin-top: 0; margin-bottom: 0.5em">
+                      {{ ui.comment|safe }}
+                    </div>
+                    {% if ui.min_words > 0 %}
+                      <div class="ui basic clearing segment" style="margin: -1em -1em">
+                        <div id="words-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}"
+                             class="ui{% if ui.cmnt_words >= ui.min_words %} basic{% endif %} black horizontal label">
+                          {{ ui.cmnt_words }}
+                        </div>
+                        &larr;
+                        <em>
+                          {{ p.lang|phrase:'Wordcount_left' }}
+                          <span id="min-words-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}">
+                            {{ ui.min_words }}
+                          </span>
+                          {{ p.lang|phrase:'Wordcount_right' }}
+                        </em>
+                      </div>
+                    {% endif %}
+                  {% endif %}
+                </div>
+                <div class="three wide column">
+                  <div class="ui center aligned basic segment">
+                    <div id="upl-{{ p.nr }}-itap-{{ ui.item.number }}"
+                         style="margin-bottom: 0.5em">
+                    </div>
+                    <input id="upl-{{ p.nr }}-itap-{{ ui.item.number }}-inp"
+                           type="hidden" value="{{ ui.rating }}">
+                    <div id="save-btn-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}">
+                      <div class="ui mini {{ t.color }} icon button"
+                           onclick="saveReviewItem({{ p.nr }}, {{ ui.item.number }},
+                               '{{ ui.item.appraisal }}', '{{ t.hex }}', false);">
+                        <i class="check square icon"></i>
+                         {{ p.lang|phrase:'Save' }}
+                      </div>
+                    </div>
+                    <div id="edit-btn-upl-{{ p.nr }}-cmnt-{{ ui.item.number }}">
+                      <div class="ui mini basic {{ t.color }} icon button"
+                           onclick="editReviewItem({{ p.nr }}, {{ ui.item.number }},
+                               '{{ ui.item.appraisal }}', false);">
+                        <i class="edit icon"></i>
+                        {{ p.lang|phrase:'Edit' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+            <form enctype="multipart/form-data" method="post" action="student/upload/{{ t.hex }}">
+              <div class="ui form">
+                {% if t.file_list %}
+                  <div class="ui stackable two column grid">
+                    {% for f in t.file_list %}
+                      <div class="column">
+                        <div class="field">
+                          <label>{{ f.prompt }}
+                            <span style="font-weight: normal">(*{{ f.types }})</span>
+                          </label>
+                          <input type="file" name="{{ f.name }}" accept="{{ f.types }}">
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                <div class="ui basic clearing segment" style="margin: -1em">
+                  <button id="submit-btn-{{ p.nr }}" type="submit"
+                          class="ui left floated disabled {{ t.color }} labeled icon button">
+                    <i class="{{ t.icon }} icon"></i>
+                    {{ t.task }}
+                  </button>
+                  <div id="wait-{{ p.nr }}" data-nr="{{ p.nr }}"
+                       class="ui right floated black basic labeled icon button"
+                       style="display: none">
+                    <i class="time icon"></i>
+                    <span id="minutes-{{ p.nr }}" class="upload-timer">{{ t.min_to_wait }}</span>
+                    {{ p.lang|phrase:'Minutes_to_submit' }}
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+          {% if t.can_revise %}
+            <div class="ui tertiary orange segment">
+              <div class="ui grid">
+                <div class="six wide column">
+                  <form action="student/modify/{{ t.hex }}">
+                    <button class="ui orange labeled icon button" type="submit">
+                      <i class="empty star icon"></i>
+                      {{ p.lang|phrase:'Modify_review' }}
+                    </button>
+                  </form>
+                </div>
+                <div class="ten wide column" style="padding-top: 1.5rem">
+                  <div class="ui small header">
+                    <i class="pointing left icon"></i>
+                    <div class="content">
+                      {{ p.lang|phrase:'Can_still_modify' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endif %}
+        {% elif t.type == 'REVIEW' %}
+          <div class="ui {{ t.color }} segment">
+            <div class="ui small header">
+              {{ p.lang|phrase:'Review_work' }}
+            </div>
+            <form id="rev-form-{{ p.nr }}" method="post" action="student/review/{{ t.rev_hex }}"
+                  style="margin-top: 1em">
+              <div class="ui form" >
+                <div class="field">
+                  <div style="font-size:large; font-style: italic">
+                    {{ p.lang|phrase:'Your_feedback' }}
+                  </div>
+                  {% for ri in t.rev_items %}
+                  <div class="ui {{ t.color }} segment">
+                    <div class="ui grid">
+                      <div class="thirteen wide column">
+                        <div><strong>{{ ri.item.number }}. {{ ri.item.name }}</strong></div>
+                        <div style="font-size: inherit; margin-bottom: 0.5em">
+                          {{ ri.item.instruction|safe }}
+                        </div>
+                        {% if ri.no_comment %}
+                          <em>{{ p.lang|phrase:'No_comment_needed' }}</em>
+                        {% else %}
+                          <div id="edit-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}">
+                            {# will be filled by openQuill(...) #}
+                          </div>
+                          <div id="save-msg-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}"
+                               style="display: none; color: rgb(220, 0, 0)">
+                            &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                          </div>
+                          <div id="view-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}"
+                               class="ui secondary segment"
+                               style="margin-top: 0; margin-bottom: 0.5em">
+                            {{ ri.comment|safe }}
+                          </div>
+                          {% if ri.min_words > 0 %}
+                            <div class="ui basic clearing segment" style="margin: -1em -1em">
+                              <div id="words-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}"
+                                   class="ui{% if ri.cmnt_words >= ri.min_words %} basic{% endif %} black horizontal label">
+                                {{ ri.cmnt_words }}
+                              </div>
+                              &larr;
+                              <em>
+                                {{ p.lang|phrase:'Wordcount_left' }}
+                                <span id="min-words-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}">
+                                  {{ ri.min_words }}
+                                </span>
+                                {{ p.lang|phrase:'Wordcount_right' }}
+                              </em>
+                            </div>
+                          {% endif %}
+                        {% endif %}
+                      </div>
+                      <div class="three wide column">
+                        <div class="ui center aligned basic segment">
+                          <div id="rev-{{ p.nr }}-itap-{{ ri.item.number }}"
+                               style="margin-bottom: 0.5em">
+                          </div>
+                          <input id="rev-{{ p.nr }}-itap-{{ ri.item.number }}-inp"
+                                 type="hidden" value="{{ ri.rating }}">
+                          <div id="save-btn-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}">
+                            <div class="ui mini {{ t.color }} icon button"
+                                 onclick="saveReviewItem({{ p.nr }}, {{ ri.item.number }},
+                                     '{{ ri.item.appraisal }}', '{{ t.rev_hex }}');">
+                              <i class="check square icon"></i>
+                               {{ p.lang|phrase:'Save' }}
+                            </div>
+                          </div>
+                          <div id="edit-btn-rev-{{ p.nr }}-cmnt-{{ ri.item.number }}">
+                            <div class="ui mini basic {{ t.color }} icon button"
+                                 onclick="editReviewItem({{ p.nr }}, {{ ri.item.number }},
+                                     '{{ ri.item.appraisal }}');">
+                              <i class="edit icon"></i>
+                              {{ p.lang|phrase:'Edit' }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                  <div class="ui {{ t.color }} segment">
+                   <div class="ui grid">
+                    <div class="sixteen wide column">
+                      {% if t.rev_items|length > 0 %}
+                        <div style="margin-bottom: 0.5em">
+                          <strong>{{ p.lang|phrase:'Overall_review' }}</strong>
+                        </div>
+                      {% endif %}
+                      {{ t.rev_inst|safe }}
+                      <div id="edit-rev-{{ p.nr }}">
+                      </div>
+                      <div id="save-msg-rev-{{ p.nr }}"
+                           style="display: none; color: rgb(220, 0, 0)">
+                        &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                      </div>
+                      <div id="view-rev-{{ p.nr }}"
+                           class="ui secondary segment"
+                           style="margin-top: 0; margin-bottom: 0.5em">
+                        {{ t.rev|safe }}
+                      </div>
+                      {% if t.min_words > 0 %}
+                        <div class="ui basic clearing segment" style="margin: -1em -1em">
+                          <div id="words-rev-{{ p.nr }}" class="ui{% if t.rev_words >= t.min_words %} basic{% endif %} black horizontal label">
+                            {{ t.rev_words }}
+                          </div>
+                          &larr;
+                          <em>
+                            {{ p.lang|phrase:'Wordcount_left' }}
+                            <span id="min-words-rev-{{ p.nr }}">{{ t.min_words }}</span>
+                            {{ p.lang|phrase:'Wordcount_right' }}
+                          </em>
+                        </div>
+                      {% endif %}
+                    </div>
+                    <div class="sixteen wide column">
+                      <label><strong>{{ p.lang|phrase:'Your_rating' }}:</strong></label>
+                      <div id="rev-rat-{{ p.nr }}" class="ui star rating" style="margin-right: 2em"
+                           data-rating="{{ t.grade }}" data-max-rating="5">
+                      </div>
+                      <input id="rev-rat-inp-{{ p.nr }}" name="rat" type="hidden" value="{{ t.grade }}">
+                      <div id="save-btn-rev-{{ p.nr }}"
+                           class="ui mini right floated {{ t.color }} labeled icon button"
+                           onclick="saveReview({{ p.nr }}, '{{ t.rev_hex }}');">
+                        <i class="check square icon"></i>
+                        {{ p.lang|phrase:'Save' }}
+                      </div>
+                      <div id="edit-btn-rev-{{ p.nr }}"
+                           class="ui mini right floated {{ t.color }} basic labeled icon button"
+                           onclick="editReview({{ p.nr }});">
+                        <i class="edit icon"></i>
+                        {{ p.lang|phrase:'Edit' }}
+                      </div>
+                      {% if t.selfie %}
+                        <div style="white-space: nowrap; margin-top: 1em">
+                          <em>{{ p.lang|phrase:'Should_be_three_stars' }}</em>
+                        </div>
+                      {% elif t.rejectable %}
+                        <div id="rej-txt-{{ p.nr }}"
+                             style="white-space: nowrap; margin-top: 1em{% if t.grade != 1 %}; display: none{% endif%}">
+                          <em>{{ p.lang|phrase:'Rejection_rule' }}</em>
+                        </div>
+                      {% endif %}
+                    </div>
+                   </div>
+                  </div>
+                </div>
+
+                <div class="ui basic clearing segment" style="margin: -1em -1em -1em -1em">
+                  <div id="wait-{{ p.nr }}" data-nr="{{ p.nr }}" data-hex="{{ t.rev_hex }}"
+                       class="ui right floated black basic labeled icon button"
+                       style="display: none">
+                    <i class="time icon"></i>
+                    <span id="minutes-{{ p.nr }}" class="review-timer">0</span>
+                    {{ p.lang|phrase:'Minutes_to_submit' }}
+                  </div>
+                  <button id="submit-btn-{{ p.nr }}" name="sub" value="1" type="submit"
+                          class="ui left floated disabled {{ t.color }} labeled icon button">
+                    <i class="{{ t.icon }} icon"></i>
+                    {{ p.lang|phrase:'Submit_review' }}
+                  </button>
+                  {% if t.rejectable %}
+                    <button id="rej-btn-{{ p.nr }}" name="rej" type="button"
+                            class="ui right floated black labeled icon button"
+                            style="display: none"
+                            onclick="confirmRejection({{ p.nr }}, '{{ p.lang.code }}');">
+                      <i class="thumbs down icon"></i>
+                      {{ p.lang|phrase:'Reject' }}
+                    </button>
+                  {% endif %}
+                </div>  
+              </div>
+            </form>
+          </div>
+        {% elif t.type == 'PROCEED' %}
+          <div class="ui tertiary clearing segment">
+            {% if t.too_late %}
+              <strong>{{ t.too_late|safe}}</strong>
+            {% else %}
+              <a class="ui left floated {{ t.color }} labeled icon button"
+                 style="margin-right: 1em" href="student/proceed/{{ p.hex }}">
+                <i class="{{ t.icon }} icon"></i>
+                {{ t.task }}
+              </a>
+            {% endif %}
+            <span>{{ p.lang|phrase:'Only_when_you_can'|safe }}</span>
+          </div>
+        {% elif t.type == 'APPR-REV' %}
+          <div class="ui {{ t.color }} segment">
+            <div class="ui small header">
+              {{ p.lang|phrase:'Appraise_review' }}
+              {% if t.video_clip %}
+                <a class="ui violet label" href="{{ t.video_clip.url }}" target="_blank">
+                  <img class="ui right spaced avatar image"
+                       src="{% static 'presto/images/vignette-' %}{{ t.video_clip.presenter_initials|lower }}.png">
+                  Infoclip
+                  <i class="video icon"></i>
+                </a>
+              {% endif %}
+            </div>
+            {{ p.lang|phrase:'Evaluated_by_successor' }}
+            <ul>
+              <li>{{ p.lang|phrase:'Read_comments' }}</li>
+              <li>{{ p.lang|phrase:'Review_own_work' }}</li>
+              <li>{{ p.lang|phrase:'Compose_response' }}</li>
+            </ul>
+            {{ p.lang|phrase:'Appeal_if_unfair' }}
+            <div class="ui small header">
+              {{ p.lang|phrase:'Successor_feedback' }}
+            </div>
+            <div class="ui {{ t.color }} secondary segment">
+              {% if t.rev_items|length > 0 %}
+                <p><strong><em>{{ p.lang|phrase:'Specific_review_items' }}</em></strong></p>
+                {% for ri in t.rev_items %}
+                  <div>
+                    <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                    <div id="app-rev-{{ p.nr }}-{{ t.nr }}-itap-{{ ri.item.number }}"
+                           style="display: inline-block; margin-left: 1em">
+                    </div>
+                  </div>
+                  <div style="font-size: small">
+                    {{ ri.item.instruction|safe }}
+                  </div>
+                  {{ ri.comment|safe }}
+                {% endfor %}
+                <p><strong><em>{{ p.lang|phrase:'Overall_review' }}</em></strong></p>
+              {% endif %}
+              {{ t.peer_review.grade_motivation|safe }}
+              <label><strong>{{ p.lang|phrase:'Successor_rating' }}:</strong></label>
+              <div id="rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
+                   data-rating="{{ t.peer_review.grade }}" data-max-rating="5"></div>
+            </div>
+            {% if t.peer_review.is_rejection %}
+              <div class="ui raised segment">
+                <div class="ui small header">
+                  <i class="thumbs down icon"></i>
+                  <div class="content">
+                    {{ p.lang|phrase:'Has_been_rejected' }}
+                    <div class="sub header">{{ p.lang|phrase:'No_follow_up' }}</div>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+            <form id="appr-form-{{ p.nr }}-{{ t.nr }}" method="post"
+                  action="student/appraise/{{ t.hex }}" style="margin-top: 1em">
+              <div class="ui form">
+                {# NOTE: the hidden field below serves to differentiate (in the Python code) #}
+                {#       between review appraisal and decision appraisal #}
+                <input id="appr-type-{{ p.nr }}-{{ t.nr }}" type="hidden" value="0">
+                {# NOTE: the improvement appraisal is 0 by default #}
+                <input id="imp-inp-{{ p.nr }}-{{ t.nr }}" type="hidden"
+                       value="{{ t.peer_review.improvement_appraisal }}">
+                {# NOTE: invite to comment on successor's work only if such work exists #}
+                {% if t.suc_hex and not t.peer_review.is_rejection %}
+                  {# if no improvement appraisal > 0 (yet), display the "invitation button" #}
+                  <div id="appr-succ-opt-{{ p.nr }}-{{ t.nr }}"
+                       class="ui basic clearing segment"
+                       style="margin: -1em{% if t.peer_review.improvement_appraisal > 0 %}; display: none{% endif %}">
+                    <div class="ui floated mini {{ t.color }} icon button"
+                         style="margin-right: 2em"
+                         onclick="$('#appr-succ-{{ p.nr }}-{{ t.nr }}').show();$('#appr-succ-opt-{{ p.nr }}-{{ t.nr }}').hide();">
+                      <i class="unhide icon"></i>
+                      {{ p.lang|phrase:'View_successors_work' }}
+                    </div>
+                    <em>{{ p.lang|phrase:'Optional' }}</em>
+                  </div>
+                  {# ... otherwise the DIV below should be displayed #}
+                  <div id="appr-succ-{{ p.nr }}-{{ t.nr }}" class="ui {{ t.color }} segment"
+                       {% if t.peer_review.improvement_appraisal == 0 %}style="display: none"{% endif %}>
+                    <div class="ui tiny compact stackable menu">
+                      <div class="header item">
+                        {{ p.lang|phrase:'View_successors_work' }}:
+                      </div>
+                      {% for f in t.suc_file_list %}
+                        <a class="item" href="download/{{ f.name }}/{{ t.suc_hex }}"
+                           target="_blank">
+                          {{ f.prompt }}
+                        </a>
+                      {% endfor %}
+                      {% if t.suc_file_list|length > 1 %}
+                        <a class="item" href="download/all-zipped/{{ t.suc_hex }}"
+                           target="_blank">
+                          <i class="file archive outline icon"></i>
+                          {{ p.lang|phrase:'Download_all' }}
+                        </a>
+                      {% endif %}
+                    </div>
+                    <div class="ui small header">
+                      <i class="talk icon"></i>
+                      {{ p.lang|phrase:'Your_opinion' }}
+                    </div>
+                    <div id="edit-btn-imp-{{ p.nr }}-{{ t.nr }}"
+                         class="ui right floated mini basic {{ t.color }} button"
+                         onclick="editImprovement('{{ p.nr }}-{{ t.nr }}');">
+                      <i class="edit icon"></i>
+                      {{ p.lang|phrase:'Edit' }}
+                    </div>
+                    <div id="save-btn-imp-{{ p.nr }}-{{ t.nr }}"
+                         class="ui right floated mini {{ t.color }} button"
+                         style="display: none"
+                         onclick="saveImprovement('{{ p.nr }}-{{ t.nr }}', '{{ t.hex }}');">
+                      <i class="save icon"></i>
+                      {{ p.lang|phrase:'Save' }}
+                    </div>
+                    <div id="imp-boxes-{{ p.nr }}-{{ t.nr }}"
+                         class="inline fields" style="pointer-events: none">
+                      <div class="field">
+                        <div class="ui radio checkbox" style="font-size: small">
+                          <input name="imp-rat-{{ p.nr }}-{{ t.nr }}"
+                                 type="radio" {% if t.peer_review.improvement_appraisal == 0 %}
+                                 checked="checked"{% endif %}
+                                 onclick="rateImprovement('{{ p.nr }}-{{ t.nr }}', 0);">
+                          <label>{{ p.lang|phrase:'Pass'|safe }}</label>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <div class="ui radio checkbox" style="font-size: small">
+                          <input name="imp-rat-{{ p.nr }}-{{ t.nr }}"
+                                 type="radio" {% if t.peer_review.improvement_appraisal == 1 %}
+                                 checked="checked"{% endif %}
+                                 onclick="rateImprovement('{{ p.nr }}-{{ t.nr }}', 1);">
+                          <label>{{ p.lang|phrase:'No_improvement' }}</label>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <div class="ui radio checkbox" style="font-size: small">
+                          <input name="imp-rat-{{ p.nr }}-{{ t.nr }}"
+                                 type="radio" {% if t.peer_review.improvement_appraisal == 2 %}
+                                 checked="checked"{% endif %}
+                                 onclick="rateImprovement('{{ p.nr }}-{{ t.nr }}', 2);">
+                          <label>{{  p.lang|phrase:'Minor_changes' }}</label>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <div class="ui radio checkbox" style="font-size: small">
+                          <input name="imp-rat-{{ p.nr }}-{{ t.nr }}"
+                                 type="radio" {% if t.peer_review.improvement_appraisal == 3 %}
+                                 checked="checked"{% endif %}
+                                 onclick="rateImprovement('{{ p.nr }}-{{ t.nr }}', 3);">
+                          <label>{{ p.lang|phrase:'Good_job' }}</label>
+                        </div>
+                      </div>
+                    </div>
+                    <div id="imp-cmnt-{{ p.nr }}-{{ t.nr }}" style="margin-bottom: 1em">
+                      <div id="edit-imp-{{ p.nr }}-{{ t.nr }}">
+                      </div>
+                      <div id="save-msg-imp-{{ p.nr }}-{{ t.nr }}"
+                           style="display: none; color: rgb(220, 0, 0)">
+                        &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                      </div>
+                      <div id="view-imp-{{ p.nr }}-{{ t.nr }}" class="ui secondary segment"
+                           style="font-size: small">
+                        {{ t.peer_review.improvement_appraisal_comment|safe }}
+                      </div>
+                    </div>
+                    <em>{{ p.lang|phrase:'Does_not_invalidate'|safe }}</em> 
+                  </div>
+                {% endif %}
+                <div class="ui small header">
+                  {{ p.lang|phrase:'Your_response' }}
+                </div>
+                <div class="ui {{ t.color }} segment">
+                  <div class="basic segment">
+                    <div id="view-appr-{{ p.nr }}-{{ t.nr }}" class="ui secondary segment">
+                      {{ t.peer_review.appraisal_comment|safe }}
+                    </div>
+                    <div id="edit-appr-{{ p.nr }}-{{ t.nr }}">
+                    </div>
+                    <div id="save-msg-appr-{{ p.nr }}-{{ t.nr }}"
+                       style="display: none; color: rgb(220, 0, 0)">
+                      &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                    </div>
+                    <div class="ui basic clearing segment" style="margin: -1em -1em">
+                      <div id="words-appr-{{ p.nr }}-{{ t.nr }}"
+                           class="ui basic {{ t.color }} horizontal label">
+                        {{ t.appr_words }}
+                      </div>
+                      &larr; <em>{{ p.lang|phrase:'Word_count_for_appeal' }}</em>
+                    </div>
+                  </div>
+                  <div class="ui basic clearing segment" style="margin: -1em">
+                    <label><strong>{{ p.lang|phrase:'Your_appraisal' }}:</strong>&nbsp;&nbsp;</label>
+                    <div id="appr-btns-{{ p.nr }}-{{ t.nr }}" class="ui mini icon buttons"
+                         style="margin-right: 2em; pointer-events: none">
+                      <div id="ap1-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
+                           onclick="appraise('{{ p.nr }}-{{ t.nr }}', 1);">
+                        <i class="smile icon"></i>
+                      </div>
+                      <div id="ap2-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
+                           onclick="appraise('{{ p.nr }}-{{ t.nr }}', 2);">
+                       <i class="meh icon"></i>
+                      </div>
+                      <div id="ap3-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
+                           onclick="appraise('{{ p.nr }}-{{ t.nr }}', 3);">
+                        <i class="frown icon"></i>
+                      </div>
+                    </div>
+                    <input id="appr-inp-{{ p.nr }}-{{ t.nr }}" name="appr" type="hidden"
+                           value="{{ t.peer_review.appraisal }}">
+                    <div id="edit-btn-appr-{{ p.nr }}-{{ t.nr }}"
+                         class="ui right floated {{ t.color }} mini basic labeled icon button"
+                         onclick="editAppraisal('{{ p.nr }}-{{ t.nr }}');">
+                      <i class="edit icon"></i>
+                      {{ p.lang|phrase:'Edit' }}
+                    </div>
+                    <div id="save-btn-appr-{{ p.nr }}-{{ t.nr }}"
+                         class="ui right floated {{ t.color }} mini labeled icon button"
+                         onclick="saveAppraisal('{{ p.nr }}-{{ t.nr }}', '{{ t.hex }}');">
+                      <i class="check square icon"></i>
+                      {{ p.lang|phrase:'Save' }}
+                    </div>
+                  </div>
+                  <div id="appeal-text-{{ p.nr }}-{{ t.nr }}"
+                       style="white-space: nowrap; margin-top: 1em; display: none">
+                    <em>{{ p.lang|phrase:'Appeal_rule' }}</em>
+                  </div>
+                </div>
+                <div class="ui basic clearing segment" style="margin: -1em">
+                  <button id="appeal-btn-{{ p.nr }}-{{ t.nr }}" type="button"
+                          class="ui right floated disabled red labeled icon button"
+                          onclick="confirmAppeal('{{ p.nr }}-{{ t.nr }}', '{{ p.lang.code }}');">
+                    <i class="pointing up icon"></i>
+                    {{ p.lang|phrase:'Appeal' }}
+                  </button>
+                  <button id="submit-appr-btn-{{ p.nr }}-{{ t.nr }}"
+                          class="ui disabled left floated {{ t.color }} labeled icon button"
+                          name="sub" value="1" type="submit">
+                    <i class="{{ t.icon }} icon"></i>
+                    {{ p.lang|phrase:'Submit_response' }}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        {% elif t.type == 'APPR-DEC' %}
+          <div class="ui basic segment">
+            <table class="ui small striped celled collapsing table" style="margin-top: -0.5em">
+              <tr>
+                <td><strong>{{ p.lang|phrase:'Appeal_made_on' }}:</strong></td>
+                <td>{{ t.time_appealed }}</td>
+              </tr>
+              <tr>
+                <td><strong>{{ p.lang|phrase:'Appeal_assigned_on' }}:</strong></td>
+                <td>{{ t.time_assigned }}</td>
+              </tr>
+              <tr>
+                <td><strong>{{ p.lang|phrase:'Appeal_first_viewed_on' }}:</strong></td>
+                <td>{{ t.time_viewed }}</td>
+              </tr>
+              <tr>
+                <td><strong>{{ p.lang|phrase:'Appeal_decided_on' }}:</strong></td>
+                <td>{{ t.time_decided }}</td>
+              </tr>
+            </table>
+            <div class="ui {{ t.color }} secondary segment">
+              <div class="ui small header">
+                {{ p.lang|phrase:'Referee_motivation' }}
+              </div>
+              {{ t.decided_appeal.grade_motivation|safe }}
+              <label><strong>{{ p.lang|phrase:'Referee_rating' }}:</strong></label>
+              <div id="ref-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
+                   data-rating="{{ t.decided_appeal.grade }}" data-max-rating="5"></div>
+              <p style="margin-top: 0.5em">{{ t.penalty_text|safe }}</p>
+              <p>{{ t.possibility_to_object }}</p>
+            </div>
+            <div class="ui small header">
+              {{ p.lang|phrase:'Please_appraise_decision' }}
+            </div>
+            <form id="appr-form-{{ p.nr }}-{{ t.nr }}" method="post"
+                  action="student/dec-appraise/{{ t.hex }}" style="margin-top: 1em">
+              <div class="ui form">
+                {# NOTE: appraisal type differentiates between review appraisal and decision appraisal #}
+                <input id="appr-type-{{ p.nr }}-{{ t.nr }}" name="apt" type="hidden"
+                       value="{{ t.appraiser }}">
+                <input id="appr-inp-{{ p.nr }}-{{ t.nr }}" type="hidden" value="{{ t.dec_appr }}">
+                <div class="field">
+                  <label>{{ p.lang|phrase:'Your_response' }}</label>
+                  <div id="edit-appr-{{ p.nr }}-{{ t.nr }}">
+                  </div>
+                  <div id="save-msg-appr-{{ p.nr }}-{{ t.nr }}"
+                       style="display: none; color: rgb(220, 0, 0)">
+                    &uarr; {{ p.lang|phrase:'Please_save_this' }} &uarr;
+                  </div>
+                  <div id="view-appr-{{ p.nr }}-{{ t.nr }}" class="ui {{ t.color }} secondary segment">
+                    {{ t.appr_motiv|safe }}
+                  </div>
+                </div>
+                <div class="ui basic clearing segment" style="margin: -1em">
+                  <div id="save-btn-appr-{{ p.nr }}-{{ t.nr }}"
+                       class="ui right floated {{ t.color }} mini labeled icon button"
+                       onclick="saveAppraisal('{{ p.nr }}-{{ t.nr }}', '{{ t.hex }}');">
+                    <i class="check square icon"></i>
+                    {{ p.lang|phrase:'Save_response' }}
+                  </div>
+                  <div id="edit-btn-appr-{{ p.nr }}-{{ t.nr }}"
+                       class="ui right floated {{ t.color }} mini basic labeled icon button"
+                       onclick="editAppraisal('{{ p.nr }}-{{ t.nr }}');">
+                    <i class="edit icon"></i>
+                    {{ p.lang|phrase:'Edit_response' }}
+                  </div>
+                  <label>
+                    <strong>{{ p.lang|phrase:'Your_dec_appraisal' }}:</strong>&nbsp;&nbsp;
+                  </label>
+                  <div class="ui mini icon buttons" style="margin-right: 2em">
+                    <div id="ap1-{{ p.nr }}-{{ t.nr }}" class="ui button"
+                         onclick="appraise('{{ p.nr }}-{{ t.nr }}', 1);">
+                      <i class="smile icon"></i>
+                    </div>
+                    <div id="ap2-{{ p.nr }}-{{ t.nr }}" class="ui button"
+                         onclick="appraise('{{ p.nr }}-{{ t.nr }}', 2);">
+                      <i class="meh icon"></i>
+                    </div>
+                    <div id="ap3-{{ p.nr }}-{{ t.nr }}" class="ui button"
+                         onclick="appraise('{{ p.nr }}-{{ t.nr }}', 3);">
+                      <i class="frown icon"></i>
+                    </div>
+                  </div>
+                  <div id="appeal-text-{{ p.nr }}-{{ t.nr }}"
+                       style="white-space: nowrap; margin-top: 1em; display: none">
+                    <em>{{ t.objection_hint }}</em>
+                  </div>
+                </div>
+                <div class="ui basic clearing segment" style="margin: -1em">
+                  {% if t.may_object %}
+                    {# NOTE: button ID says "appeal" rather than "object" #}
+                    {#       so that updateAppraisalButtons also works for this form #}
+                    <button id="appeal-btn-{{ p.nr }}-{{ t.nr }}" type="button"
+                            class="ui right floated red labeled icon button"
+                            onclick="confirmObjection('{{ p.nr }}-{{ t.nr }}', '{{ p.lang.code }}');">
+                      <i class="pointing up icon"></i>
+                      {{ p.lang|phrase:'Object' }}
+                    </button>
+                  {% endif %}
+                  <button id="submit-appr-btn-{{ p.nr }}-{{ t.nr }}"
+                          class="ui left floated disabled {{ t.color }} labeled icon button"
+                          name="sub" value="1" type="submit">
+                    <i class="{{ t.icon }} icon"></i>
+                    {{ p.lang|phrase:'Submit_response' }}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        {% endif %}  {# test for type of task #}
+        {% if t.bonus %}
+          <div class="ui secondary segment">
+            <i class="circular yellow star half icon"></i>
+            {{ t.bonus|safe }}
+          </div>
+        {% endif %}
+        {# separate primary and secondary tasks #}
+        {% if t.nr == 1 and p.tasks|length > 1 %}
+    </div>
+    <div class="ui segments">
+        {% endif %}
+      {% endfor %}  {# t in tasks #}
+    </div>  {# DIV enclosing series of UI segments #}
+  {% endfor %}  {# p in participations #}
+{% endif %}
+
+<div id="hidden-quill" hidden="hidden">
+  <div id="quill-container">
+    <div id="quill-editor" style="height: 10em"></div>
+  </div>
+</div>
+
+<div id="progress-modal" class="ui tiny modal">
+  <div class="actions">
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div id="progress-header" class="header" style="margin-top: -3em">
+  </div>
+  <div class="image content" style="margin-top:-1em">
+    <img class="ui fluid image" id="large-img" src="">
+  </div>
+</div>
+
+<div id="alias-modal" class="ui tiny modal">
+  <div class="header">
+    Set focus exclusively on "dummy" # <span id="alias-dummy">0</span>
+  </div>
+  <div class="ui basic segment">
+    <form id="alias-form" class="ui form" method="post" action="user/focus/hex-code">
+      <div class="field">
+        <label>Alias</label>
+        <input type="text" id="alias-name" name="alias" maxlength="32"
+               placeholder="Your name (or alias)">
+      </div>
+      <small><em>
+        (Aliases must start with a letter, and be at least 6 alfanumerical characters long)
+      </em></small>
+      <div class="ui right floated basic segment" style="margin-right: -1em">
+        <div class="ui right labeled icon button" onclick="$('#alias-modal').modal('hide');">
+          <i class="cancel icon"></i>
+          Cancel
+        </div>
+        <button class="ui primary right labeled icon button" type="submit">
+          <i class="user circle outline icon"></i>
+          Focus
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="error-modal" class="ui small modal">
+  <div class="header">
+    Input not saved!
+  </div>
+  <div class="content">
+    <div class="ui orange tiny icon message">
+      <i class="exclamation triangle icon"></i>
+      <div class="content">
+        <div class="header">The server reports this error:</div>
+        <div id="error-modal-msg"></div>
+      </div>
+    </div>
+    <p>
+      To save your input, please copy it <strong>now</strong> from the editor below,
+      then refresh this page, and try to enter it again.
+    </p>
+    <div id="error-quill-container">
+      <div id="error-quill-editor" style="height: 10em"></div>
+    </div>
+  </div>
+  <div class="ui basic clearing segment" style="padding-right: 1.5em; margin-top: -1.5em">
+    <div class="ui orange approve right floated labeled icon button"
+         onclick="$('#error-modal').hide();">
+      OK, I got it
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
+{% for l in languages %}
+
+<div id="confirm-reject-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    {{ l|phrase:'Really_reject' }}
+  </div>
+  <div class="content">
+    {{  l|phrase:'Reject_caution'|safe }}
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui red approve right labeled icon button">
+      {{ l|phrase:'Reject'  }}
+      <i class="thumbs down icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-appeal-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    {{ l|phrase:'Really_appeal' }}
+  </div>
+  <div class="content">
+    {{ l|phrase:'Appeal_caution'|safe }}
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui red approve right labeled icon button">
+      {{ l|phrase:'Appeal'  }}
+      <i class="pointing up icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-object-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    {{ l|phrase:'Really_object' }}
+  </div>
+  <div class="content">
+    {{ l|phrase:'Objection_caution'|safe }}
+  </div>  
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui red approve right labeled icon button">
+      {{ l|phrase:'Object'  }}
+      <i class="pointing up icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-referee-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    <div id="review-case-{{ l.code }}" class="ui huge blue horizontal label">X0</div>
+    {{ l|phrase:'Confirm_referee' }}
+  </div>
+  <div class="content">
+    {{ l|phrase:'Referee_caution'|safe }}
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui yellow approve right labeled icon button">
+      {{ l|phrase:'Confirm' }}
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-post-review-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    <div id="assignment-case-{{ l.code }}" class="ui huge blue horizontal label">X0</div>
+    {{ l|phrase:'Confirm_post_review' }}
+  </div>
+  <div class="content">
+    {{ l|phrase:'Post_review_info'|safe }}
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui orange approve right labeled icon button">
+      {{ l|phrase:'Confirm' }}
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
+{% endfor %}
+
+{% endblock page_content %}

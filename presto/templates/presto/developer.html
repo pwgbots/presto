@@ -1,0 +1,212 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/search.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/search.js' %}"></script>
+{% endblock headlines %}
+
+{% block component_inits %}
+
+$('#new-template-button').click(function() {
+  window.location.replace('./template/new');
+});
+
+$('#import-template-button').click(function() {
+  $('#invalid-json').hide();
+  $('#template-json').val('');
+  showTemplateModal();
+});
+
+$('#import-json-modal').modal({onApprove: importTemplate});
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+
+var TEMPLATE_LIST = '';
+
+function showTemplateModal() {
+  obj = {a: 'get templates'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        TEMPLATE_LIST = json.tl;
+        $('#template-search').search({
+          source: TEMPLATE_LIST,
+          onSelect: function(result, response) { getTemplateString(result.id) }
+        });
+        $('#template-search').search('set value', '');
+        $('#import-json-modal').modal('show');
+      }
+    }
+  });
+}
+
+function getTemplateString(hex) {
+  var obj = {a: 'export template', h: hex};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      var json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#template-json').val(json.tj);
+      }
+    }
+  });
+}
+
+function importTemplate() {
+  var str = $('#template-json').val();
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    $('#invalid-json').show();
+    return false;
+  }
+  obj = {a: 'import template', tj: str};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        window.location.replace('./developer');
+      }
+    }
+  });
+}
+
+{% endblock javascripts %}
+
+{% block user_menu %}
+<div class="ui compact menu">
+  <a class="item" href="developer">
+    <i class="cubes icon"></i>
+    Developer
+  </a>
+</div>
+{% endblock user_menu %}
+{% block page_content %}
+  {% if templates %}
+    <h2 class="ui header">
+      <i class="flag outline icon"></i>
+      <div class="content">
+        Templates that you are (co-)authoring
+      </div>
+    </h2> 
+    <div class="ui fluid vertical menu">
+    {% for t in templates %}
+      <a class="item" href="./template/{{ t.hex }}">
+        <h3 class="ui header">
+          <div class="ui blue horizontal label" style="margin-left: 0">
+            {{ t.leg_count }} step{% if t.leg_count != 1 %}s{% endif %}
+          </div>
+          {{ t.object.name }}
+          <div class="sub header">
+            <small>{{ t.edits }}</small>
+          </div>
+        </h3>
+      </a>
+    {% endfor %}
+    </div>
+  {% else %}
+    <h2 class="ui header">
+      <i class="info circle icon"></i>
+      <div class="content">
+        You are presently not (co-)authoring any templates
+      </div>
+    </h2>
+  {% endif %}
+<div class="ui basic clearing segment" style="padding: 0 0; margin: 1em 0 0 0">
+  <button id="new-template-button" class="ui blue button">
+    <i class="plus icon"></i>
+    New template
+  </button>
+  <button id="import-template-button" class="ui black button">
+    <i class="creative commons icon"></i>
+    Copy, export or import
+  </button>
+</div>
+
+<div class="ui modal" id="import-json-modal">
+  <div class="header">
+    Copy, export or import a template
+  </div>
+  <div class="content">
+    <p>To copy or export, select a published template from the database.</p>
+    <div id="template-search" class="ui search">
+      <div class="ui icon input">
+        <input class="prompt" placeholder="Search templates..." type="text">
+        <i class="search icon"></i>
+      </div>
+      <div class="results"></div>
+    </div>
+    <p style="margin-top: 1em">
+      To import, paste a JSON template string copied from the PRESTO community wiki into the field below.
+    </p>
+    <form>
+      <textarea id="template-json" style="font: 8pt monospace; width: 100%; min-height: 30vh; padding-top: 0.5em">
+      </textarea>
+    </form>
+    <div id="invalid-json" style="color: rgb(220, 0, 0); padding-top: 0.5em">
+      Invalid JSON string
+    </div>
+    <p style="margin-top: 1em">
+      Click <strong>Import</strong> to create a template as specified above.
+    </p>
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui blue approve right labeled icon button">
+      Import
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+{% endblock page_content %}

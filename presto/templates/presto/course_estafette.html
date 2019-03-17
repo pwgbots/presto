@@ -1,0 +1,963 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dropdown.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dropdown.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/form.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/form.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/popup.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/popup.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+#participant-modal, #scan-modal {
+  height: 85vh !important;
+}
+
+.nbs {
+  white-space: nowrap
+}
+
+.apic {
+  display: inline;
+  margin: 0;
+  width: 1em
+}
+{% endblock styles %}
+
+{% block component_inits %}
+$('select.dropdown').dropdown();
+$('table').tablesort();
+$('#participant-modal').modal();
+$('#scan-modal').modal();
+$('#settings-modal').modal();
+{% endblock component_inits %}
+
+{% block javascripts %}
+var STEP_COLORS = ['', 'red', 'orange', 'yellow', 'olive', 'green', 'black'];
+var APPR_ICONS = ['grey help circle outline', 'smile', 'meh', 'frown', 'pointing up'];
+var USER_NAMES = [];
+var USER_GRADES = [];
+var INCOMPLETE = [];
+var NR_OF_PARTICIPANTS = {{ participants|length }};
+var PROGRESS_CHART_URL = '{{ chart_url }}';
+
+function showParticipant(hex) {
+  PROGRESS_CHART_URL = 'progress/p/' + hex;
+  obj = {a: 'participant history', h: hex };
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+      $('#p-name').html(json.pn);
+      $('#p-mail').attr('data-tooltip', json.pm);
+      $('#p-content').html(json.ph);
+      $('.ui.rating').rating();
+      $('#participant-modal').modal('show');
+      $('#progress-bar-container').html('');
+      $('#progress-bar').appendTo($('#progress-bar-container'));
+    }
+  });
+}
+
+function showScans(hex) {
+  obj = {a: 'participant scan', h: hex };
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+      $('#scan-name').html(json.pn);
+      $('#scan-content').html(json.ps);
+      $('#scan-modal').modal('show');
+    }
+  });
+}
+
+/*
+	A simple, lightweight jQuery plugin for creating sortable tables.
+	https://github.com/kylefox/jquery-tablesort
+	Version 0.0.11
+*/
+
+(function($) {
+	$.tablesort = function ($table, settings) {
+		var self = this;
+		this.$table = $table;
+		this.$thead = this.$table.find('thead');
+		this.settings = $.extend({}, $.tablesort.defaults, settings);
+		this.$sortCells = this.$thead.length > 0 ? this.$thead.find('th:not(.no-sort)') : this.$table.find('th:not(.no-sort)');
+		this.$sortCells.on('click.tablesort', function() {
+			self.sort($(this));
+		});
+		this.index = null;
+		this.$th = null;
+		this.direction = null;
+	};
+
+	$.tablesort.prototype = {
+
+		sort: function(th, direction) {
+			var start = new Date(),
+				self = this,
+				table = this.$table,
+				rowsContainer = table.find('tbody').length > 0 ? table.find('tbody') : table,
+				rows = rowsContainer.find('tr').has('td, th'),
+				cells = rows.find(':nth-child(' + (th.index() + 1) + ')').filter('td, th'),
+				sortBy = th.data().sortBy,
+				sortedMap = [];
+
+			var unsortedValues = cells.map(function(idx, cell) {
+				if (sortBy)
+					return (typeof sortBy === 'function') ? sortBy($(th), $(cell), self) : sortBy;
+				return ($(this).data().sortValue != null ? $(this).data().sortValue : $(this).text());
+			});
+			if (unsortedValues.length === 0) return;
+
+			//click on a different column
+			if (this.index !== th.index()) {
+				this.direction = 'asc';
+				this.index = th.index();
+			}
+			else if (direction !== 'asc' && direction !== 'desc')
+				this.direction = this.direction === 'asc' ? 'desc' : 'asc';
+			else
+				this.direction = direction;
+
+			direction = this.direction == 'asc' ? 1 : -1;
+
+			self.$table.trigger('tablesort:start', [self]);
+			self.log("Sorting by " + this.index + ' ' + this.direction);
+
+			// Try to force a browser redraw
+			self.$table.css("display");
+			// Run sorting asynchronously on a timeout to force browser redraw after
+			// `tablesort:start` callback. Also avoids locking up the browser too much.
+			setTimeout(function() {
+				self.$sortCells.removeClass(self.settings.asc + ' ' + self.settings.desc);
+				for (var i = 0, length = unsortedValues.length; i < length; i++)
+				{
+					sortedMap.push({
+						index: i,
+						cell: cells[i],
+						row: rows[i],
+						value: unsortedValues[i]
+					});
+				}
+
+				sortedMap.sort(function(a, b) {
+					return self.settings.compare(a.value, b.value) * direction;
+				});
+
+				$.each(sortedMap, function(i, entry) {
+					rowsContainer.append(entry.row);
+				});
+
+				th.addClass(self.settings[self.direction]);
+
+				self.log('Sort finished in ' + ((new Date()).getTime() - start.getTime()) + 'ms');
+				self.$table.trigger('tablesort:complete', [self]);
+				//Try to force a browser redraw
+				self.$table.css("display");
+			}, unsortedValues.length > 2000 ? 200 : 10);
+		},
+
+		log: function(msg) {
+			if(($.tablesort.DEBUG || this.settings.debug) && console && console.log) {
+				console.log('[tablesort] ' + msg);
+			}
+		},
+
+		destroy: function() {
+			this.$sortCells.off('click.tablesort');
+			this.$table.data('tablesort', null);
+			return null;
+		}
+
+	};
+
+	$.tablesort.DEBUG = false;
+
+	$.tablesort.defaults = {
+		debug: $.tablesort.DEBUG,
+		asc: 'sorted ascending',
+		desc: 'sorted descending',
+		compare: function(a, b) {
+            // compare numbers as such, rather than as strings
+            if (a === +a && b === +b) {
+                a = +a;
+                b = +b;
+            }
+			if (a > b) {
+				return 1;
+			} else if (a < b) {
+				return -1;
+			} else {
+				return 0;
+			}
+		}
+	};
+
+	$.fn.tablesort = function(settings) {
+		var table, sortable, previous;
+		return this.each(function() {
+			table = $(this);
+			previous = table.data('tablesort');
+			if(previous) {
+				previous.destroy();
+			}
+			table.data('tablesort', new $.tablesort(table, settings));
+		});
+	};
+
+})(window.Zepto || window.jQuery);
+
+function showLargeImage() {
+  $('#progress-chart-img').attr('src', PROGRESS_CHART_URL);
+  $('#progress-modal').modal('show')
+}
+
+function showSettingsDialog() {
+  $('#settings-modal').modal('show');
+}
+
+function checkFloat(name, value) {
+  if (isNaN(value)) {
+    $('#status-msg').html('Invalid value for ' + name);
+    $('#status-line').show();
+    return false;
+  } else {
+    return true;
+  }
+}
+
+function validateCutoffs() {
+  var l = $('#low-cutoff').val(), h = $('#high-cutoff').val();
+  if (checkFloat('low cut-off', l) && checkFloat('high cut-off', h)) {
+    if (parseFloat(h) <= parseFloat(l)) {
+      $('#status-msg').html('High cutoff must be larger than low cutoff');
+      $('#status-line').show();
+      return false;
+    }
+    return true;
+  }
+}
+
+function validateGradeRange() {
+  var l = $('#alpha').val(), h = $('#omega').val();
+  if (checkFloat('low end of grade range', l) && checkFloat('high end of grade range', h)) {
+    if (parseFloat(h) > parseFloat(l)) return true;
+    $('#status-msg').html('High end of grade range must be larger than low end');
+    $('#status-line').show();
+  }
+  return false;
+}
+
+function validatePassingGrade() {
+  var p = $('#kappa').val();
+  if (checkFloat('passing grade', p)) {
+    var l = parseFloat($('#alpha').val()), h = parseFloat($('#omega').val());
+    p = parseFloat(p);
+    if ((p >= l) && (p <= h)) return true;
+    $('#status-msg').html('Passing grade falls outside grade range');
+    $('#status-line').show();
+  }
+  return false;
+}
+
+function drawHistogram(width=600, height=300) {
+  if (!(validateCutoffs() && validateGradeRange() && validatePassingGrade())) return
+  USER_GRADES = [];
+  USER_NAMES = [];
+  INCOMPLETE = [];
+  var tally = [[], [], [], []];
+  var barcol = ['#EC7F2C', '#FFB880', '#00A6D6', '#80D0FF'];
+  var as_grade = $('#as-grade').is(':checked');
+  var perc = $('#cumulative-percentage').is(':checked');
+  var step = ($("#half-points").is(':checked') ? 0.5 : 1);
+  var low_cutoff = parseFloat($('#low-cutoff').val()),
+      high_cutoff = parseFloat($('#high-cutoff').val()),
+      alpha = parseFloat($('#alpha').val()),
+      kappa = parseFloat($('#kappa').val()),
+      omega = parseFloat($('#omega').val());
+  var score_range = high_cutoff - low_cutoff, grade_range = omega - alpha;
+  var i, g, cs, pcnt = 0, pass_cnt = 0;
+  for (i = 0; i < NR_OF_PARTICIPANTS; i++) {
+    g = $('#score-' + i).html();
+    cs = parseInt($('#completed-' + i).html());
+    if (!isNaN(g) && cs+1 >= {{ legs|length }}) {
+      g = Math.max(Math.min(parseFloat(g), high_cutoff), low_cutoff);
+      if (as_grade) {
+        g = alpha + (g - low_cutoff) * grade_range / score_range;
+        if (g >= kappa) pass_cnt++;
+      }
+      USER_GRADES[pcnt] = g;
+      USER_NAMES[pcnt] = $('#user-' + i).html();
+      if (cs < {{ legs|length }}) INCOMPLETE.push(pcnt);
+      pcnt++;
+    }
+  }
+  $('#n-completed').html(pcnt - INCOMPLETE.length);
+  $('#perc-completed').html(Math.round(100 * (pcnt - INCOMPLETE.length) / NR_OF_PARTICIPANTS));
+  $('#n-near-completed').html(INCOMPLETE.length);
+  $('#perc-near-completed').html(Math.round(100 * INCOMPLETE.length / NR_OF_PARTICIPANTS));
+  $('#n-pass').html(pass_cnt);
+  $('#perc-pass').html(Math.round(100 * pass_cnt / pcnt));
+  if (!as_grade) {
+    alpha = low_cutoff;
+    omega = high_cutoff;
+    kappa = 0.5*(alpha + omega);
+    barcol = ['#A0A0A0', '#E0E0E0', '#A0A0A0', '#E0E0E0']
+  }
+  var p, s, t, barcnt = Math.floor((omega - alpha) / step) + 1;
+  for (i = 0; i < barcnt; i++) {
+    tally[0][i] = 0; tally[1][i] = 0; tally[2][i] = 0; tally[3][i] = 0;
+  }
+  for (p = 0; p < pcnt; p++) {
+    s = Math.round((USER_GRADES[p] - alpha) / step);
+    t = ((USER_GRADES[p] < kappa) ? 0 : 2) + ((USER_GRADES[p] < alpha + s*step) ? 0 : 1);
+    tally[t][s]++;
+  }
+  var maxt = 0;
+  for (i = 0; i < barcnt; i++) {
+    maxt = Math.max(maxt, (tally[0][i] + tally[1][i] + tally[2][i] + tally[3][i]));
+  }
+  var ld = ((maxt > 70) ? 10 : 5);
+  maxt = (Math.floor(maxt / ld) + 1) * ld;
+  var ps = 100 * ld / maxt;
+  var y0 = height - 35;
+  var scale = (y0 - 7) / maxt;
+  var pscale = (y0 - 7) / pcnt;
+  var x0 = 40;
+  var gw = (perc ? width - 45 : width);
+  var bw = (gw - x0) / barcnt;
+  var dbw = Math.floor(0.8*bw);
+  var canvas = document.getElementById('canvas');
+  var context = canvas.getContext('2d');
+  context.fillStyle = '#FFFFFF';
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = '#C0C0C0';
+  context.font = '14px Lato';
+  context.fillStyle = '#000000';
+  var n, tw, y;
+  for (i = 0; i <= maxt/ld; i++) {
+    n = '' + (i*ld);
+    tw = context.measureText(n).width;
+    y = Math.round(y0 - ld*scale*i);
+    context.fillText(n, x0 - tw - 14, y+5);
+    if (perc) {
+      n = Math.round(i*ps) + '%';
+      tw = context.measureText(n).width;
+      context.fillText(n, width - tw - 4, y+5);   
+    }
+    context.beginPath();
+    context.moveTo(x0 - 10, y); 
+    context.lineTo((perc ? gw + 6 : gw), y);
+    context.stroke();
+  }
+  if (step == 1) {
+    t = '-99 ';
+  } else {
+    t = '-99.5 '
+  }
+  n = (gw - x0) / context.measureText(t).width;
+  var inc = 1;
+  while (n < barcnt / inc) {
+    inc++;
+  }
+  for (i = 0; i < barcnt; i += inc) {
+    n = '' + (alpha + i*step);
+    htw = Math.round((bw - context.measureText(n).width) / 2);
+    context.fillText(n, x0 + i*bw + htw, y0 + 18);
+  }
+  for (i = 0; i < barcnt; i++) {
+    by = y0;
+    for (t = 0; t < 4; t++) {
+      if (tally[t][i] > 0) {
+        context.fillStyle = barcol[t];
+        bh = Math.round(tally[t][i]*scale);
+        context.fillRect(x0+i*bw, by -= bh, dbw, bh);
+      }
+    }
+  }
+  if (perc) {
+    px = x0;
+    py = y0;
+    context.strokeStyle = '#A10058';
+    context.lineWidth = 3;
+    context.beginPath();
+    context.moveTo(px, py);
+    for (i = 0; i < barcnt; i++) {
+      for (t = 0; t < 2; t++) {
+        px += (bw / 2);
+        py -= (tally[t][i] + tally[t+2][i]) * pscale;
+        context.lineTo(Math.round(px), Math.round(py));
+      }
+    }
+    context.stroke();
+  }
+  context.strokeStyle = '#000000';
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(x0 - 4, 0);
+  context.lineTo(x0 - 4, y0);
+  context.lineTo(gw, y0);
+  if (perc) context.lineTo(gw, 0);
+  context.stroke();
+  var image = canvas.toDataURL('image/png');
+  document.getElementById('histogram').setAttribute('src', image);
+  if (as_grade) {
+    $('#legend').show();
+  } else {
+    $('#legend').hide();
+  }
+  $('#status-line').hide();
+}
+
+function showHistogram() {
+  drawHistogram();
+  $('#histogram-modal').modal('show');
+}
+
+function downloadGrades() {
+  var g, i, data = '';
+  for (i = 0; i < USER_GRADES.length; i++) {
+    g = Math.round(10 * USER_GRADES[i]) / 10;
+    data += USER_NAMES[i] + '\t' + (INCOMPLETE.indexOf(i) < 0 ? g : '(' + g + ')') + '\r\n';
+  }
+  var e = document.getElementById('data-saver');
+  e.href = 'data:attachment/text,' + encodeURI(data);
+  e.download = 'presto-grades.txt';
+  e.click();
+}
+
+function checkDateTime(id) {
+  obj = {a: 'validate datetime',
+         s: $('#'+id).val(),
+        };
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+      $('#'+id).val(json.dt);
+    }
+  });
+}
+
+function showStatistics() {
+  $('#statistics-modal').modal('show');
+}
+
+function NaNToBlank(x) {
+  if ((x+0) === x) return x;
+  return '';
+}
+
+function statsAsText(obj) {
+  var i, j, txt = '';
+  try {
+    txt += 'Assigned:\t' + obj.count + '\t(cloned: ' + obj.clones + '; self-reviewed: ' + obj.selfies + ')\n';
+    txt += 'Uploaded:\t' + obj.submitted + '\n';
+    txt += 'Graded:\t' + obj.graded + '\t(rejected: ' + obj.rejected + ')\n';
+    txt += 'Appraised:\t' + obj.appraised + '\n';
+    txt += 'Appeals:\t'+ obj.appealed + '\t(decided: ' + obj.judged;
+    if (obj.judged > 0) {
+      txt += '; sustained: ' + obj.sustained + ' = ' + (obj.avg_sustained * 100).toFixed(2) + '%';
+    }
+    txt += ')\n';
+    txt += '\n\tReceived\t\t\t\t\t\t\t\t\tAppraisal';
+    txt += '\nGiven stars\t1 star\t2 stars\t3 stars\t4 stars\t5 stars\tAvg. stars\tAvg. score\t\tReceived stars\tAppeal\tUnhappy\tNeutral\tHappy\tAvg. (appeal = 0, happy = 3)\n';
+    for (i = 1; i <= 5; i++) {
+      txt += i;
+      for (j = 1; j <= 5; j++) {
+        txt += '\t' + obj.stars[i][j];
+      }
+      txt += '\t' + NaNToBlank(obj.avg_stars[i]) + '\t' + NaNToBlank(obj.scores[i]);
+      txt += '\t\t' + i;
+      for (j = 4; j > 0; j--) {
+        txt += '\t' + obj.appraisals[i][j];
+      }
+      txt += '\t' + NaNToBlank(4 - obj.avg_appraisal[i]) + '\n';
+    }
+    txt += '\nPenalty points\n\t\Total\tAverage\n';
+    txt += 'Predecessor\t' + obj.predecessor_penalties + '\t' + NaNToBlank(obj.avg_predecessor_penalty) + '\n';
+    txt += 'Successor\t' + obj.successor_penalties + '\t' + NaNToBlank(obj.avg_successor_penalty) + '\n';
+    txt += 'Bonus points\t' + obj.bonuses + '\t' + NaNToBlank(obj.avg_bonus) + '\n';
+    txt += '\nAverage time per stage (in hours)';
+    txt += '\nUploading:\t' + NaNToBlank(obj.avg_hours_till_submit);
+    txt += '\nGrading:\t' + NaNToBlank(obj.avg_hours_till_grade);
+    txt += '\nAppraising:\t' + NaNToBlank(obj.avg_hours_till_appraisal);
+    txt += '\nDeciding:\t' + NaNToBlank(obj.avg_hours_till_judgement);
+  } catch(err) {
+    txt += '\n\nERROR: ' + err.message;
+  }
+  return txt;
+}
+
+function downloadStatistics() {
+  var i, letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', data = 'Presto Relay Statistics\n\n';
+  data += statsAsText(STATISTICS) + '\n\nBY RELAY STEP';
+  for (i = 0; i < STATISTICS.legs.length; i++) {
+    data += '\n\nSTEP ' + (i+1) + '\n' + statsAsText(STATISTICS.legs[i]);
+  }
+  data += '\n\nBY RELAY CASE';
+  for (i = 0; i < letters.length; i++) {
+    if (STATISTICS.cases.hasOwnProperty(letters[i])) {
+      data += '\n\nCASE ' + letters[i] + '\n' + statsAsText(STATISTICS.cases[letters[i]]);
+    }
+  }
+  var e = document.getElementById('stats-saver');
+  e.href = 'data:attachment/text,' + encodeURI(data);
+  e.download = 'presto-statistics.txt';
+  e.click();
+}
+
+var STATISTICS = {{ stats_json|safe }};
+
+{% endblock javascripts %}
+
+{% block user_menu %}
+<div class="ui compact menu">
+  <a class="item" href="instructor">
+    <i class="student icon"></i>
+    Instructor
+  </a>
+</div>
+{% endblock user_menu %}
+{% block page_content %}
+<div class="ui grid" style="margin-top: 1em;">
+  <div class="twelve wide column">
+    <h3 class="ui header">
+      <i class="checkered flag icon"></i>
+      <div class="content">
+      <div class="ui {{ next_deadline.color }} horizontal label" style="margin-left: 0;"
+           {% if demo_code %} data-tooltip="Code: {{ demo_code }}"{% endif %}>
+        {{ active_count }}/{{ participant_count }}
+      </div>
+      {{ estafette.title|safe }}
+      <div class="ui blue horizontal circular label" style="margin-left: 2em; cursor: pointer"
+           data-tooltip="Change settings for this relay" onclick="showSettingsDialog();">
+        <i class="settings icon" style="margin-right: 0"></i>
+      </div>
+      {% if participants %}
+        <div class="ui blue horizontal circular label" style="margin-left: 1em; cursor: pointer"
+             data-tooltip="Show statistics for this relay" onclick="showStatistics();">
+          <i class="chart pie icon" style="margin-right: 0"></i>
+        </div>
+        <div class="ui blue horizontal circular label" style="margin-left: 1em; cursor: pointer"
+             data-tooltip="Show histogram of scores" onclick="showHistogram();">
+          <i class="chart bar icon" style="margin-right: 0"></i>
+        </div>
+        {% if can_download %}
+          <a class="ui black horizontal circular label" style="margin-left: 1em"
+             data-tooltip="Download relay data" href="dataset/{{ ce_hex }}">
+            <i class="download icon" style="margin-right: 0"></i>
+          </a>
+        {% endif %}
+      {% endif %}
+      <div class="sub header">
+        <small>
+          <span class="nbs"><em>Start time:</em> {{ start_time }}</span>
+          <span class="nbs"><em>End time:</em> {{ end_time }}</span><br/>
+          <span class="nbs"><em>{{ next_deadline.label}}:</em> {{ next_deadline.time }}</span>
+        </small>
+      </div>
+      </div>
+    </h3>
+  </div>
+  <div class="four wide column">
+    <img src="{{ chart_url }}" style="width: 8.1em; height:4.8em"
+         onclick="PROGRESS_CHART_URL = '{{ chart_url }}'; showLargeImage();" />
+  </div>
+</div>
+{% if participants %}
+<table class="ui selectable sortable striped celled table">
+  <thead>
+    <tr>
+      <th class="six wide">Name</th>
+      <th class="one wide">Score</th>
+      <th class="five wide">Received reviews</th>
+      <th class="five wide">Given reviews</th>
+    </tr>
+  </thead>
+  <tbody>
+{% endif %}
+{% for p in participants %}{% if not p.instructor %}
+  <tr id="{{ p.hexed_id }}">
+    <td onclick="showParticipant('{{ p.encoded_id }}');">
+      {{ p.name }} &nbsp;&nbsp; <span style="font-size: 10pt; cursor: pointer"
+        onclick="event.stopPropagation(); showScans('{{ p.encoded_id }}');">{{ p.scan_status|safe }}</span>
+      <br/>
+      <div class="ui small {{ p.progress_color }} horizontal label"
+           style="margin-left: 0"{% if p.pin %} data-tooltip="PIN: {{ p.pin }}"{% endif %}>
+       {{ p.progress }}%
+      </div>
+      <small>{{ p.last_action }}</small>
+    </td>
+    <td class="collapsing" style="text-align: center">
+      <span id="score-{{ p.nr }}" data-tooltip="{{ p.score_details|safe }}"
+            {% if p.eligible %}style="font-weight: bold; color: {% if p.completed_steps == legs|length %}green{% else %}orange{% endif %}" {% endif %}>{{ p.score }}</span>
+      <span id="user-{{ p.nr }}" hidden="hidden">{{ p.username }}</span>
+      <span id="completed-{{ p.nr }}" hidden="hidden">{{ p.completed_steps }}</span>
+    </td>
+    <td class="collapsing">
+      {% for s in p.steps %}
+        {% for r in s.received_reviews %}
+          <a data-tooltip="{{ r.reviewer_popup|safe }}" href="javascript:;"
+             onclick="document.location.hash='{{ r.reviewer_hex }}';"
+             class="ui small {{ r.color }} horizontal circular label"
+             style="margin-right:0{{ r.shadow }}">{% if r.final_review_index or r.by_instructor %}<span style="color:black{% if r.by_instructor %};text-decoration: overline{% endif %}">{{ r.letter }}</span>{% else %}{{ r.letter }}{% endif %}</a>
+        {% endfor %}
+        {% for r in s.expected_reviews %}
+          <div data-tooltip="{{ s.assignment.time_assigned|date:'D d M Y' }} {{ s.assignment.time_assigned|time:'H:i' }}"
+               class="ui small white horizontal circular label"
+               style="margin-right:0; color:white">{{ s.letter }}</div>
+        {% endfor %}
+      {% endfor %}
+      {% for s in p.rblanks %}
+        <div class="ui small white horizontal basic circular label"
+             style="margin-right:0; color:white">?</div>
+      {% endfor %}
+      <br/>
+      {% for s in p.steps %}
+        {% for r in s.received_reviews %}
+          <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon" style="width:1.17em"></i></div>
+        {% endfor %}
+        {% for r in s.expected_reviews %}
+          <div data-tooltip="nothing to appraise" class="apic"><i class="inverted grey help circle outline icon" style="width:1.17em"></i></div>
+        {% endfor %}
+      {% endfor %}
+    </td>
+    <td class="collapsing">
+      {% for s in p.steps %}{% if s.given_review %}
+        <a data-tooltip="{{ s.given_review.receiver_popup|safe }}" href="javascript:;"
+           onclick="document.location.hash='{{ s.given_review.receiver_hex }}';"
+           class="ui small {{ s.given_review.color }} {% if s.clone %}basic {% endif %}horizontal circular label"
+           style="margin-right:0{{ s.given_review.shadow }}{% if s.self_review %};font-style:italic;font-weight:900{% endif %}">{{ s.letter }}</a>
+      {% endif %}{% endfor %}
+      {% for r in p.given_final_reviews %}
+        <a data-tooltip="{{ r.receiver_popup|safe }}" href="javascript:;"
+           onclick="document.location.hash='{{ r.receiver_hex }}';"
+           class="ui small {{ r.color }} horizontal circular label"
+           style="margin-right:0{{ r.shadow }}"><span style="color: black">{{ r.letter }}</span></a>
+      {% endfor %}
+      {% for s in p.gblanks %}
+        <div class="ui small white horizontal basic circular label"
+             style="margin-right:0; color:white">?</div>
+      {% endfor %}
+        <br/>
+      {% for s in p.steps %}{% if s.given_review %}
+        <div data-tooltip="{{ s.given_review.status|safe }}"
+             class="apic"><i class="{{ s.given_review.icon_color }} {{ s.given_review.icon }} icon"
+             style="width:1.17em"></i></div>
+      {% endif %}{% endfor %}
+      {% for r in p.given_final_reviews %}
+        <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon" style="width:1.17em"></i></div>
+      {% endfor %}
+    </td>
+  </tr>
+{% endif %}{% endfor %}
+{% if participants %}
+  </tbody>
+</table>
+
+<div id="participant-modal" class="ui fullscreen modal">
+  <i class="close icon"></i>
+  <div id="participant-modal-header" class="small header">
+    <span id="p-name">Participant name</span>
+    <div class="ui blue horizontal circular label"
+         style="margin-left: 3em; cursor: pointer" onclick="showLargeImage();">
+      <i class="chart area icon" style="margin-right: 0"></i>
+    </div>
+    <div id="p-mail" class="ui black horizontal circular label" data-tooltip="e-mail address">
+      <i class="mail icon" style="margin-right: 0"></i>
+    </div>
+    <div id="progress-bar-container" style="display: inline-block">
+    </div>
+  </div>
+  <div id="p-content" class="scrolling content">
+  </div>
+</div>
+
+<div id="scan-modal" class="ui fullscreen modal">
+  <i class="close icon"></i>
+  <div id="scan-name" class="small header">
+    Participant name
+  </div>
+  <div id="scan-content" class="scrolling content">
+  </div>
+</div>
+{% endif %}
+
+<div id="progress-modal" class="ui tiny modal">
+  <div class="actions">
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div class="header" style="margin-top: -3em">
+    Relay progress chart
+  </div>
+  <div class="image content" style="margin-top:-1em">
+    <img id="progress-chart-img" class="image" src="{{chart_url}}" />
+  </div>
+</div>
+
+<div id="settings-modal" class="ui modal" style="min-height: 320px">
+  <div class="header">
+    Change settings for this relay
+  </div>
+  <div class="ui basic segment">
+    <form id="settings-form" class="ui form" action="course-estafette/{{ ce_hex }}" method="post">
+      <div class="two fields">
+        <div class="inline field">
+          <label># final reviews:</label>
+          <input name="reviews" type="text" value="{{ estafette.final_reviews }}" style="width: 3em">
+        </div>
+        <div class="inline field">
+          <label>Questionnaire:</label>
+          <div class="ui selection dropdown">
+            <input name="questionnaire" type="hidden">
+            <i class="dropdown icon"></i>
+            <div class="default text">Questionnaire</div>
+            <div class="menu">
+            {% for q in questionnaires %}
+              <div class="item" data-value="{{ q.hex }}">{{ q.name }}</div>
+            {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="four fields">
+        <div class="inline field">
+          <label>Start time:</label>
+          <input name="s-time" value="{{ s_time }}" onblur="checkDateTime('s-time');"
+                 style="width: 10em">
+        </div>
+        <div class="inline field">
+          <label>Assignments due:</label>
+          <input name="d-time" value="{{ d_time }}" onblur="checkDateTime('d-time');"
+                 style="width: 10em">
+        </div>
+        <div class="inline field">
+          <label>Final reviews due:</label>
+          <input name="f-time" value="{{ f_time }}" onblur="checkDateTime('f-time');"
+                 style="width: 10em">
+        </div>
+        <div class="inline field">
+          <label>End time:</label>
+          <input name="e-time" value="{{ e_time }}" onblur="checkDateTime('e-time');"
+                 style="width: 10em">
+        </div>
+      </div>
+      <div class="three fields">
+        <div class="inline field">
+          <div class="ui checkbox">
+            <input name="clips" type="checkbox" value="1"{% if estafette.with_review_clips %}
+                   checked="checked"{% endif %}>
+            <label>Review clips</label>
+          </div>
+        </div>
+        <div class="inline field">
+          <div class="ui checkbox">
+            <input name="badges" type="checkbox" value="1"{% if estafette.with_badges %}
+                   checked="checked"{% endif %}>
+            <label>Badges</label>
+          </div>
+        </div>
+        <div class="inline field">
+          <div class="ui checkbox">
+            <input name="referees" type="checkbox" value="1"{% if estafette.with_referees %}
+                   checked="checked"{% endif %}>
+            <label>Referees</label>
+          </div>
+        </div>
+      </div>
+      <div class="three fields">
+        <div class="inline field">
+          <label>Speed bonus:</label>
+          <input name="bonus" value="{{ estafette.speed_bonus }}" style="width: 5em">
+        </div>
+        <div class="inline field">
+          <div class="ui checkbox">
+            <input name="per-step" type="checkbox" value="1"{% if estafette.bonus_per_step %}
+                   checked="checked"{% endif %}>
+            <label>Bonus per step</label>
+          </div>
+        </div>
+        <div class="inline field">
+          <div class="ui checkbox">
+            <input name="hidden" type="checkbox" value="1"{% if estafette.is_hidden %}
+                   checked="checked"{% endif %}>
+            <label>Not visible</label>
+          </div>
+        </div>
+      </div>
+      <div class="ui basic right floated clearing segment" style="margin-top:-0.5em">
+        <button class="ui small primary right labeled icon button" type="submit">
+          Modify
+          <i class="check icon"></i>
+        </button>
+        <div class="ui small right labeled icon button" onclick="$('#settings-modal').modal('hide')">
+          Cancel
+          <i class="cancel icon"></i>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="histogram-modal" class="ui small modal" style="min-width: 650px">
+  <div class="actions">
+    <div class="ui left floated blue horizontal icon button"
+         data-tooltip="Download grades" onclick="downloadGrades();">
+      <i class="download icon"></i>
+    </div>
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div style="font-weight: bold; font-size: 90%; width: inherit; margin: -3em auto 2em">
+    {{ participants|length }} participants, of whom
+    <span id="n-completed">0</span> completed (<span id="perc-completed">0</span>%), and
+    <span id="n-near-completed">0</span> near-completed
+    (<span id="perc-near-completed">0</span>%)
+  </div>
+  <a id="data-saver" target = '_blank' hidden="hidden"></a>
+  <div class="content" style="margin-top:-2em">
+    <img id="histogram" class="image" src="" style="min-height: 300px" />
+    <canvas id="canvas" width="600" height="300" style="display: none"></canvas>
+    <table>
+      <tr>
+        <td colspan="2" style="padding-right: 1em; padding-bottom: 0.5em">
+          <em>Darker shade: rounded up; lighter shade: rounded down</em>
+        </td>
+        <td style="padding-bottom: 0.5em">
+          <span id="legend" hidden="hidden">
+            <span style="background-color: #00a6d6; display: inline-block; width:20px">&nbsp;</span>
+            pass (<span id="n-pass"></span> &asymp; <span id="perc-pass"></span>%)
+            <span style="background-color: #ec7f2c; display: inline-block; width:20px; margin-left:1em">&nbsp;</span>
+            fail
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Score range:&nbsp;
+        </td>
+        <td>
+          <em>Low:</em>&nbsp;<input id="low-cutoff" value="-10" maxlength="5"
+              style="width:2.5em" onblur="drawHistogram();">&nbsp;&nbsp;&nbsp;
+          <em>High:</em>&nbsp;<input id="high-cutoff" value="10" maxlength="5"
+              style="width:2.5em" onblur="drawHistogram();"> 
+        </td>
+        <td>
+          <input id="as-grade" type="checkbox" onclick="drawHistogram();"/>
+          Convert scores to grades
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Grade range:&nbsp;
+        </td>
+        <td>
+          <em>Low:</em>&nbsp;<input id="alpha" value="1" maxlength="5"
+              style="width:2.5em" onblur="drawHistogram();">&nbsp;&nbsp&nbsp;
+          <em>High:</em>&nbsp;<input id="omega" value="10" maxlength="5"
+              style="width:2.5em" onblur="drawHistogram();">
+        </td>
+        <td>
+          <input id="cumulative-percentage" type="checkbox" onclick="drawHistogram();"/>
+          Cumulative percentage
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Passing grade:&nbsp;
+        </td>
+        <td>
+          <input id="kappa" value="5.5" maxlength="5" style="width:2.5em" onblur="drawHistogram();">
+        </td>
+        <td>
+          <input id="half-points" type="checkbox" onclick="drawHistogram();"/>
+          Half point precision
+        </td>
+      </tr>
+      <tr id="status-line" style="display: none;">
+        <td id="status-msg" colspan="3" style="background-color: Yellow">Warning</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div id="statistics-modal" class="ui small modal" style="min-width: 650px">
+  <div class="actions">
+    <div class="ui left floated blue horizontal icon button"
+         data-tooltip="Download statistics" onclick="downloadStatistics();">
+      <i class="download icon"></i>
+    </div>
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div style="font-weight: bold; font-size: 120%; width: 350px; margin: -2.3em auto 2em">
+    Statistics on {{ stats.submitted }} uploaded assignments
+  </div>
+  <a id="stats-saver" target = '_blank' hidden="hidden"></a>
+  <div class="content" style="margin-top:-2em">
+    <div class="header">
+      Work in progress: will present most relevant statistics as diagrams 
+    </div>
+    <p>
+      For now, please download statistics as text file (tab-separated)
+      and paste them into Excel.
+    </p>
+  </div>
+</div>
+{% endblock page_content %}

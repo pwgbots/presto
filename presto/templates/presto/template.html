@@ -1,0 +1,1097 @@
+{% extends "developer.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block headlines %}
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/tab.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/tab.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/checkbox.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/checkbox.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+.ql-container {
+  font-family: Lato;
+  font-size: 16px;
+}
+.ql-toolbar.ql-snow {
+  padding: 2px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+{% endblock styles %}
+
+{% block component_inits %}
+$('#instance-warning').hide();
+$('.tabular.menu .item').tab();
+$('#edit-template').hide();
+$('#step-segment').hide();
+$('#edit-step').hide();
+$('#edit-upload').hide();
+$('#edit-review').hide();
+
+$('#editor-dropdown').dropdown({
+  onChange: function(value, text, choice) {
+    updateEditors('add', value);
+  }
+});
+
+QUILLS = [
+  new Quill('#quill-editor-0', {
+    modules: {
+      toolbar: [
+        [{ header: [2, 3, false] }],
+        ['bold', 'italic', 'underline'],
+        [{ 'script': 'sub'}, { 'script': 'super' }],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['link', 'image']
+      ]
+    },
+    theme: 'snow',
+    formats: ['bold', 'italic', 'underline', 'script', 'header', 'list', 'link', 'image']
+  }),
+
+  new Quill('#quill-editor-1', {
+    modules: {
+      toolbar: [
+        [{ header: [2, 3, false] }],
+        ['bold', 'italic', 'underline'],
+        [{ 'script': 'sub'}, { 'script': 'super' }],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['link', 'image']
+      ]
+    },
+    theme: 'snow',
+    formats: ['bold', 'italic', 'underline', 'script', 'header', 'list', 'link', 'image']
+  })
+];
+
+{% for l in template.legs %}
+  {% if not l.object.rejectable %}
+    $('#reject-lbl-{{ l.object.number }}').hide();
+  {% endif %}
+{% endfor %}
+
+{% if template.object.published %}
+  $('#publish-template-button').hide();
+{% else %}
+  $('#withdraw-template-button').hide();
+{% endif %}
+
+$('#publish-template-button').click(function() {
+  var obj = {a: 'publish template', h: '{{ template.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#publish-template-button').hide();
+        $('#withdraw-template-button').show();
+      }
+    }
+  });
+});
+
+$('#withdraw-template-button').click(function() {
+  var obj = {a: 'withdraw template', h: '{{ template.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#withdraw-template-button').hide();
+        $('#publish-template-button').show();
+      }
+    }
+  });
+});
+
+$('#delete-template-button').click(function() {
+  $('#delete-template-modal').modal('show')
+});
+
+$('#delete-template-modal').modal({
+  onApprove: function() {
+    window.location.replace('./developer/delete-template/{{ template.hex }}');
+  }
+});
+
+$('#edit-template-button').click(function() {
+  $('#view-template').hide();
+  openQuill('(template description)', LAST_JSON.d, 'template-desc-anchor');  
+  $('#edit-template').show();
+});
+
+$('#edit-step-button').click(editStepTab);
+$('#edit-upload-button').click(editStepTab);
+$('#edit-review-button').click(editStepTab);
+
+$('#add-step-button').click(function() {
+  window.location.replace('./template/add-step/{{ template.hex }}');
+});
+
+$('#delete-step-button').click(function() {
+  $('#del-step-nr').text(SELECTED_STEP);
+  $('#del-step-name').text($('#step-name-' + SELECTED_STEP).text());
+  $('#delete-step-modal').modal('show')
+});
+
+$('#delete-item-modal').modal({
+  onApprove: function() {
+    var obj = {a: 'delete item', h: SELECTED_HEX, nr: EDITED_ITEM, ric: REV_ITEM_CAT};
+    $.post('./ajax', obj, function(response, status, xhr) {
+      if ( status == 'error' ) {
+        alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+      } else {
+        json = JSON.parse(response);
+        if (json.error != null) {
+          alert('Error: ' + json.error);
+        } else {
+          EDITED_ITEM = 0;
+          getStepData(SELECTED_STEP, json)
+        }
+      }
+    });
+  }
+});
+
+$('#delete-step-modal').modal({
+  onApprove: function() {
+    window.location.replace('./template/delete-step/' + SELECTED_HEX);
+  }
+});
+
+$('#edit-item-modal').modal({
+  onApprove: function() {
+    var obj = {
+      a: (EDITED_ITEM == 0 ? 'new' : 'modify') + ' item',
+      h: SELECTED_HEX,
+      nr: EDITED_ITEM,
+      n: $('#item-name-inp').val(),
+      i: QUILLS[0].container.querySelector('.ql-editor').innerHTML,
+      nc: $('#item-no-cmnt-inp').is(':checked'),
+      w: $('#item-words-inp').val(),
+      ap: $('#item-appr-inp').val(),
+      ric: REV_ITEM_CAT
+    }
+    $.post('./ajax', obj, function(response, status, xhr) {
+      if ( status == 'error' ) {
+        alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+      } else {
+        json = JSON.parse(response);
+        if (json.error != null) {
+          alert('Error: ' + json.error);
+        } else {
+          EDITED_ITEM = 0;
+          getStepData(SELECTED_STEP, json)
+        }
+      }
+    });
+  }
+});
+
+getTemplate();
+updateEditors('list');
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+var SELECTED_STEP = 0, SELECTED_HEX = '', SELECTED_TAB = 'template', LAST_JSON = '{}';
+var EDITED_ITEM = 0, REV_ITEM_CAT;
+var QUILLS = [];
+
+function openQuill(placeholder, content, anchor, quill=0) {
+  QUILLS[quill].root.setAttribute('data-placeholder', placeholder);
+  QUILLS[quill].setContents([{ insert: '\n' }]);
+  QUILLS[quill].pasteHTML(content);
+  QUILLS[quill].setSelection(0, 0);
+  $('#quill-container-' + quill).appendTo($('#' + anchor));
+  /*
+  setTimeout(function() {
+    QUILLS[quill].container.querySelector('.ql-editor').firstChild.scrollIntoView();
+    }, 200
+  );
+  */
+}
+
+function reorder(e, hex, dir) {
+  window.location.replace('./template/move-' + dir + '/' + hex);
+  e.stopPropagation();
+}
+
+function getTemplateData(json) {
+  LAST_JSON = json;
+  $('#template-name').html(json.n);
+  $('#template-name-inp').val(json.n);
+  $('#del-e-name').html(json.n);
+  $('#template-edits').html(json.te);
+  $('#template-desc').html(json.d);
+  if (json.cnt == 0) {
+    $('#instance-warning').hide();
+    $('#delete-template-button').show();
+  } else {
+    $('#instance-cnt').text(json.cnt);
+    if (json.cnt == 1) {
+      $('#plural-s').hide();
+    } else {
+      $('#plural-s').show();
+    }
+    $('#instance-warning').show();
+    $('#delete-template-button').hide();
+  }
+  $('#step-segment').hide();
+  $('#edit-template').hide();
+  $('#view-template').show();
+}
+
+function getTemplate() {
+  var obj = {a: 'get template', h: '{{ template.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      var json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getTemplateData(json);
+      }
+    }
+  });
+}
+
+function updateEditors(action, hex='') {
+  var obj = {a: action + ' template editor', h: '{{ template.hex }}', ed: hex};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        m = '<div class="item"><strong>Editors:</strong></div>' +
+          '<div class="item"><i class="cube icon"></i>{{ template.owner }}</div>';
+        for (ed in json.eds) {
+          {% if template.owned %}
+          m += '<a class="item" onclick="updateEditors(\'remove\', \'' +
+               json.eds[ed].hex + '\');">' + json.eds[ed].name +
+               '<div class="small ui icon"><i class="red remove icon"></i></div></a>';
+          {% else %}
+          m += '<div class="item">' + json.eds[ed].name + '</div>';
+          {% endif %}
+        }
+        $('#editor-menu').html(m);
+        $('#editor-dropdown').dropdown('clear');
+      }
+    }
+  });
+}
+
+function modifyTemplate() {
+  var obj = {
+    a: 'modify template',
+    h: '{{ template.hex }}',
+    n: $('#template-name-inp').val(),
+    d: QUILLS[0].container.querySelector('.ql-editor').innerHTML,
+    g: QUILLS[1].container.querySelector('.ql-editor').innerHTML
+  };
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getTemplateData(json);
+      }
+    }
+  });
+}
+
+function restoreTemplate() {
+  getTemplateData(LAST_JSON);
+}
+
+function switchTab(tab) {
+  SELECTED_TAB = tab;
+}
+
+function editStepTab() {
+  $('#view-' + SELECTED_TAB).hide();
+  if (SELECTED_TAB == 'step') {
+    openQuill('(step instruction)', LAST_JSON.d, 'step-desc-anchor');
+    openQuill('(step learning objectives)', LAST_JSON.lo, 'step-goals-anchor', 1);
+  } else if (SELECTED_TAB == 'upload') {
+    openQuill('(upload instruction)', LAST_JSON.ui, 'upl-instr-anchor');
+  } else if (SELECTED_TAB == 'review') {
+    openQuill('(review instruction)', LAST_JSON.ri, 'rev-instr-anchor');
+  }
+  $('#edit-' + SELECTED_TAB).show();
+  $('#step-tab-menu').css('pointer-events', 'none');
+}
+
+function getStepData(nr, json) {
+  LAST_JSON = json;
+  $('#step-name-inp').val(json.n);
+  $('#step-name-' + nr).html(json.n);
+  $('#step-reject-inp').prop('checked', json.r);
+  if (json.r) {
+    $('#step-rejectable').show();
+    $('#reject-lbl-' + nr).show();
+  } else {
+    $('#step-rejectable').hide();
+    $('#reject-lbl-' + nr).hide();
+  }
+  $('#step-title').html('Step ' + nr + ' &ndash; ' + json.n);
+  $('#step-edits').html(json.se);
+  if (json.acnt == 0) {
+    $('#delete-step-button').show();
+  } else {
+    $('#delete-step-button').hide();
+  }
+  $('#step-desc').html(json.d);
+  $('#step-goals').html(json.lo);
+  $('#upl-instr').html(json.ui);
+  displayItems(false);
+  $('#upl-files-inp').val(json.f);
+  ful = json.ff
+  ulen = ful.length;
+  items = '';
+  for (i = 0; i < ulen; i++) {
+    items += '<li><em>' + ful[i].prompt + ':</em> <tt>' + ful[i].name + '(' + ful[i].types + ')</tt></li>';
+  }
+  $('#upl-files').html(items);
+  $('#upl-title').html(json.s);
+  $('#upl-title-inp').val(json.s);
+  $('#upl-keywords').html(json.k);
+  $('#upl-keywords-inp').val(json.k);
+  $('#upl-length').html(json.l);
+  $('#upl-length-inp').val(json.l);
+  $('#upl-time').html(json.ut);
+  $('#upl-time-inp').val(json.ut);
+  $('#rev-instr').html(json.ri);
+  $('#rev-words').html(json.w);
+  $('#rev-words-inp').val(json.w);
+  if (json.w === 0) {
+    $('#rev-words').hide();
+  } else {
+    $('#rev-words').show();
+  }
+  $('#rev-time').html(json.rt);
+  $('#rev-time-inp').val(json.rt);
+  if (json.rt === 0) {
+    $('#rev-time').hide();
+  } else {
+    $('#rev-time').show();
+  }
+  displayItems(true);
+  if (SELECTED_TAB !== 'template') {
+    $('.ui.menu').find('.item').tab('change tab', SELECTED_TAB + '-tab');
+  }
+  $('#view-template').hide();
+  $('#step-segment').show();
+  $('#step-tab-menu').css('pointer-events', 'auto');
+}
+
+function selectStep(nr, hex) {
+  NEW_STEP = nr;
+  NEW_HEX = hex;
+  if (NEW_STEP != SELECTED_STEP && $('#edit-' + SELECTED_TAB).is(':visible')) {
+    alert('Please save changes, or cancel.');
+    return false;
+  }
+  switchStep();
+}
+
+function switchStep() {
+  $('#step-item-' + SELECTED_STEP).removeClass('active');
+  SELECTED_STEP = NEW_STEP;
+  $('#step-item-' + SELECTED_STEP).addClass('active');
+  SELECTED_HEX = NEW_HEX;
+  if (NEW_STEP === 0) {
+    SELECTED_TAB = 'template';
+    getTemplate();
+    return;
+  }
+  if (SELECTED_TAB == 'template') SELECTED_TAB = 'step';
+  var obj = {a: 'get step', h: SELECTED_HEX, t: SELECTED_TAB}
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getStepData(SELECTED_STEP, json);
+      }
+    }
+  });
+}
+
+function cancelStep() {
+  $('#edit-' + SELECTED_TAB).hide();
+  getStepData(SELECTED_STEP, LAST_JSON);
+  $('#view-' + SELECTED_TAB).show();
+}
+
+function modifyStep() {
+  var obj = {a: 'modify step', h: SELECTED_HEX, t: SELECTED_TAB}
+  if (SELECTED_TAB == 'step') {
+    obj['n'] = $('#step-name-inp').val();
+    obj['r'] = $('#step-reject-inp').is(':checked');
+    obj['d'] = QUILLS[0].container.querySelector('.ql-editor').innerHTML;
+    obj['lo'] = QUILLS[1].container.querySelector('.ql-editor').innerHTML;
+  } else if (SELECTED_TAB == 'upload') {
+    obj['i'] = QUILLS[0].container.querySelector('.ql-editor').innerHTML;
+    obj['f'] = $('#upl-files-inp').val();
+    regx = new RegExp('^((([\\w\\s]+)(\\:)([\\s]*)([\\w]+)(\\.)(([\\w]{2,5}(,|;|$))+))([\\s]*))+$');
+    if (regx.test(obj['f']) || obj['f'] == '') {
+      $('#upl-files-field').removeClass('error');
+      $('#upl-files-hint').css({'font-weight': 'normal', 'color': 'initial'});
+    } else {
+      $('#upl-files-field').addClass('error');
+      $('#upl-files-hint').css({'font-weight': '700', 'color': '#9F3A38'});
+      return false;
+    }
+    obj['u'] = parseInt($('#upl-time-inp').val());
+    obj['s'] = $('#upl-title-inp').val();
+    obj['k'] = $('#upl-keywords-inp').val();
+    obj['l'] = parseInt($('#upl-length-inp').val());
+  } else if (SELECTED_TAB == 'review') {
+    obj['i'] = QUILLS[0].container.querySelector('.ql-editor').innerHTML;
+    obj['m'] = $('#rev-model-inp').val();
+    obj['w'] = parseInt($('#rev-words-inp').val());
+    obj['r'] = parseInt($('#rev-time-inp').val());
+  }
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#edit-' + SELECTED_TAB).hide();
+        getStepData(SELECTED_STEP, json);
+        $('#view-' + SELECTED_TAB).show();
+      }
+    }
+  });
+}
+
+function displayItems(rits=true) {
+  var items, icat, icolor, ric, r, ap, range, apic, s = '';
+  if (rits) {
+    items = LAST_JSON.rits;
+    icat = 'rev';
+    icolor = 'orange',
+    ric = '';
+  } else {
+    items = LAST_JSON.uits;
+    icat = 'upl';
+    icolor = 'purple',
+    ric = ', false'
+  }
+  for (i = 0; i < items.length; i++) {
+    r = items[i];
+    s += '<a class="item" onclick="editItem(' + r.number + ric + ')"><h4 class="ui header">' +
+        r.number + '. ' + r.name;
+    if (r.no_comment || r.word_count > 0) {
+      s += '<div class="ui small ' + icolor + ' basic horizontal label">' +
+          (r.no_comment ? 'no comment' : r.word_count + '+ words') + '</div>';
+    }
+    if (r.appraisal) {
+      var ap = r.appraisal.split(':'), apic = 'sort', range = '';
+      if (ap[0] == 'rating') {
+        range = ap[1];
+        apic = ap[2]; 
+      } else if (ap[0] == 'likert') {
+        range = ap[1];
+        apic = 'dashboard'; 
+      } else if (ap[0] == 'score') {
+        range = ap[1];
+        apic = 'hashtag'; 
+      } else if (ap[0] == 'icons') {
+        range = ap.length - 1;
+        apic = 'smile'; 
+      } else if (ap[0] == 'options') {
+        range = ap.length - 1;
+        apic = 'list ul'; 
+      }
+      s += '<div class="ui small ' + icolor + ' horizontal label"><i class="' +
+          apic + ' icon"></i>' + range + '</div>';
+    }
+    s += '<button class="mini ui right floated circular ' + (i === 0 ? 'disabled' : 'secondary') +
+        ' icon button" style="padding: 5px"' +
+        (i === 0 ? '' : ' onclick="reorderItem(event, ' + r.number + ', -1' + ric + ');"') +
+        '><i class="arrow up icon"></i></button><button class="mini ui right floated circular ' +
+        (i < items.length - 1 ? 'secondary' : 'disabled') +
+        ' icon button" style="padding: 5px"' +
+        (i < items.length - 1 ? ' onclick="reorderItem(event, ' + r.number + ', 1' + ric + ');"' : '') +
+        '><i class="arrow down icon"></i></button>' +
+        '<button class="mini ui right floated basic red icon button" ' +
+        'style="margin-right: 1em; padding: 5px" ' +
+        'onclick="deleteItem(event, ' + r.number + ric + ')"><i class="trash icon"></i></button>' +
+        '</h4><p id="item-instr-1" style="margin-top: -1em">' + r.first_line + '</p></a>';
+  }
+  if (s != '') {
+    s = '<div class="ui small fluid vertical menu" style="margin-bottom: 1em">' + s + '</div>';
+  }
+  $('#' + icat + '-items').html(s);
+}
+
+function editItem(nr, rits=true) {
+  var items;
+  if (rits) {
+    items = LAST_JSON.rits;
+    $('#item-modal-category').text('review');
+    $('#item-modal-button').removeClass('purple');
+    $('#item-modal-button').addClass('orange');
+  } else {
+    items = LAST_JSON.uits;
+    $('#item-modal-category').text('assignment');
+    $('#item-modal-button').removeClass('orange');
+    $('#item-modal-button').addClass('purple');
+  }
+  EDITED_ITEM = nr;
+  REV_ITEM_CAT = rits;
+  if (EDITED_ITEM === 0) {
+    $('#item-modal-action').text('Add new');
+    $('#item-modal-button-text').text('Add item');
+    $('#item-name-inp').val('');
+    openQuill('(review item instruction)', '', 'item-instr-anchor');
+    $('#item-no-cmnt-inp').prop('checked', false);
+    $('#item-words-inp').val('0');
+    $('#item-appr-inp').dropdown('clear');
+  } else {
+    $('#item-modal-action').text('Edit');
+    $('#item-modal-button-text').text('Save changes');
+    nr--;
+    $('#item-name-inp').val(items[nr].name);
+    openQuill('(review item instruction)', items[nr].instruction, 'item-instr-anchor');
+    $('#item-no-cmnt-inp').prop('checked', items[nr].no_comment);
+    $('#item-words-inp').val(items[nr].word_count);
+    $('#item-appr-inp').val(items[nr].appraisal);
+  }
+  $('#edit-item-modal').modal('show');
+}
+
+function reorderItem(e, n, dir, rits=true) {
+  var obj = {a: 'reorder item', h: SELECTED_HEX, nr: n, d: dir, ric: rits};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      var json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        EDITED_ITEM = 0;
+        getStepData(SELECTED_STEP, json)
+      }
+    }
+  });
+  e.stopPropagation();
+}
+
+function deleteItem(e, nr, rits=true) {
+  var items;
+  if (rits) {
+    items = LAST_JSON.rits;
+  } else {
+    items = LAST_JSON.uits;
+  }
+  EDITED_ITEM = nr;
+  REV_ITEM_CAT = rits;
+  $('#del-item-nr').text(nr);
+  $('#del-item-name').text(items[nr - 1].name);
+  $('#delete-item-modal').modal('show');
+  e.stopPropagation();
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+<div id="instance-warning" class="ui orange tiny icon message" hidden="hidden">
+  <i class="warning sign icon"></i>
+  <i class="close icon"></i>
+  <div class="content">
+    <div class="header">
+      This template is used by <span id="instances">1</span> relay<span id="plural-s"></span>
+    </div>
+    This means that you cannot delete this template.<br/>
+    Please note that any change you make will affect running project relays.
+  </div>
+</div>
+
+<div class="ui basic clearing segment" style="padding: 0 0; margin: 1em 0 0 0">
+  <h2 class="ui left floated header" style="margin-bottom: 0">
+    <i class="flag outline icon"></i>
+    <div id="template-name" class="content">{{ template.object.name }}</div>
+  </h2>
+  <button id="delete-template-button" class="ui right floated small basic red button">
+    <i class="trash icon"></i>
+    Delete
+  </button>
+</div>
+
+<div id="editor-menu" class="ui compact stackable secondary menu" style="margin-left: -1em">
+  {# menu is filled by updateEditors(...) #}
+</div>
+
+{% if template.owned %}
+  <div id="editor-dropdown" class="ui selection dropdown">
+    <input name="editor-inp" type="hidden">
+    <i class="dropdown icon"></i>
+    <div class="default text">(add editor)</div>
+    <div class="menu">
+    {% for s in staff %}
+      <div class="item" data-value="{{ s.hex }}">{{ s.name }}</div>
+    {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+<div class="ui basic segment" style="padding: 0 0; margin: 1em 0 0 0">
+ <div class="ui stackable grid">
+  <div class="four wide column">
+    <div class="ui small fluid vertical right pointing menu">
+      <a id="step-item-0" class="active item" onclick="selectStep(0, '')">
+        <h4 class="ui header">Template properties</h4>
+        <p style="margin-top: -1em">Name, description, visibility</p>
+      </a>
+      {% for l in template.legs %}
+      <a id="step-item-{{ l.object.number }}" class="item" onclick="selectStep({{ l.object.number }}, '{{ l.hex }}');">
+        <h4 class="ui header">
+          Step {{ l.object.number }}
+          <div id="reject-lbl-{{ l.object.number }}" class="ui empty red circular horizontal label"></div>
+          <button class="mini ui right floated circular {% if l == template.legs|first %}disabled{% else %}secondary{% endif %} icon button" style="padding: 5px" onclick="reorder(event, '{{ l.hex }}', 'up');">
+            <i class="arrow up icon"></i>
+          </button>
+          <button class="mini ui right floated circular {% if l == template.legs|last %}disabled{% else %}secondary{% endif %} icon button" style="padding: 5px" onclick="reorder(event, '{{ l.hex }}', 'down');">
+            <i class="arrow down icon"></i>
+          </button>
+        </h4>
+        <p id="step-name-{{ l.object.number }}" style="margin-top: -1em">{{ l.object.name }}</p>
+      </a>
+      {% endfor %}
+    </div>
+    <button id="add-step-button" class="ui small primary button" style="margin-bottom: 1em">
+      <i class="plus icon"></i>
+      Add step
+    </button>
+  </div>
+  <div class="twelve wide column">
+    <div id="view-template" class="ui segments">
+      <div id="template-edits" class="ui secondary segment" style="font-size: x-small; line-height: 1.5em">
+        {{ template.edits }}
+      </div>
+      <div id="template-desc" class="ui segment">
+        {{ template.object.description|safe }}
+      </div>
+      <div class="ui basic clearing segment">
+        <div id="edit-template-button" class="ui mini left floated blue icon button" style="margin-top:-1em"> 
+          <i class="edit icon"></i>
+          Edit
+        </div>
+        <div id="withdraw-template-button" class="ui mini right floated basic black button" style="margin-top:-1em">
+          <i class="hide icon"></i>
+          Withdraw
+        </div>
+        <div id="publish-template-button" class="ui mini right floated black button" style="margin-top:-1em">
+          <i class="unhide icon"></i>
+          Publish
+        </div>
+      </div>
+    </div>
+    <div id="edit-template" class="ui black segment" style="margin:0em -0.5em !important">
+      <div class="ui form" >
+        <div class="fluid inline field">
+          <label>Template name:</label>
+          <input id="template-name-inp" type="text" value="{{ template.object.name }}">
+        </div>
+        <div id="template-desc-anchor" class="field">
+          <label>Template description:</label>
+        </div>
+        <button class="ui mini primary button" onclick="modifyTemplate();">
+          <i class="check square icon"></i>
+          Modify
+        </button>
+        <button class="ui mini button" type="cancel" onclick="restoreTemplate();">
+          <i class="cancel icon"></i>
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <div id="step-segment" class="ui segment" style="margin: 0em -0.5em !important">
+      <h4 class="ui header">
+        <span id="step-title"></span>
+        <div id="step-rejectable" class="ui small red horizontal label">Rejectable</div>
+        <div id="delete-step-button" class="ui mini right floated basic red icon button"> 
+          <i class="trash icon"></i>
+          Delete this step
+        </div>
+        <div id="step-edits" class="sub header" style="font-size: x-small"></div>
+      </h4>
+      <div id="step-tab-menu" class="ui top attached secondary tabular menu">
+        <div class="active blue item" data-tab="step-tab" onclick="switchTab('step');">Step</div>
+        <div class="purple item" data-tab="upload-tab" onclick="switchTab('upload');">Upload</div>
+        <div class="orange item" data-tab="review-tab" onclick="switchTab('review');">Review</div>
+      </div>
+      <div class="ui active blue bottom attached tab segment" data-tab="step-tab" style="margin-bottom: 0em">
+        <div id="view-step">
+          <h4>
+            Step instruction
+            <div id="edit-step-button" class="ui mini right floated blue icon button"> 
+              <i class="edit icon"></i>
+              Edit
+            </div>
+          </h4>
+          <div id="step-desc" class="ui basic segment" style="margin:-1.1em -2em -1em -1em">
+          </div>
+          <h4>
+            Learning objectives
+          </h4>
+          <div id="step-goals" class="ui basic segment" style="margin:-1.1em -2em -1em -1em">
+          </div>
+        </div>
+        <div id="edit-step">
+          <div class="ui form" >
+            <div class="inline field">
+              <label>Name:</label>
+              <input id="step-name-inp" type="text" size="40">
+            </div>
+            <div class="inline field">
+              <div class="ui checkbox">
+                <input id="step-reject-inp" type="checkbox" value="R">
+                <label>This step can be rejected</label>
+              </div>
+            </div>
+            <div id="step-desc-anchor" class="field">
+              <label>Instruction:</label>
+              <div id="quill-container-0">
+                <div id="quill-editor-0" style="height: 10em"></div>
+              </div>
+            </div>
+            <div id="step-goals-anchor" class="field">
+              <label>Learning objectives:</label>
+              <div id="quill-container-1">
+                <div id="quill-editor-1" style="height: 10em"></div>
+              </div>
+            </div>
+            <button class="mini ui blue button" onclick="modifyStep();">
+              <i class="check square icon"></i>
+              Save changes
+            </button>
+            <button class="mini ui button" onclick="cancelStep();">
+              <i class="cancel icon"></i>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="ui purple bottom attached tab segment" data-tab="upload-tab" style="margin-bottom: 0em">
+        <div id="view-upload">
+          <h4>
+            Upload instruction
+            <div id="edit-upload-button" class="ui mini right floated purple icon button"> 
+              <i class="edit icon"></i>
+              Edit
+            </div>
+          </h4>
+          <div id="upl-instr"></div>
+          <div class="ui divider"></div>
+          <h4>
+            Assignment items
+            <span style="font-size: small; font-style: italic; font-weight: normal">(click to edit)</span>
+          </h4>
+          <div id="upl-items">
+          </div>
+          <div id="add-item-button" class="ui mini purple icon button"
+               onclick="editItem(0, false);"> 
+            <i class="plus icon"></i>
+            Add item
+          </div>
+          <div class="ui divider"></div>
+          <div>
+            <h4>Required files</h4>
+            <ul id="upl-files"></ul>
+          </div>
+          <div class="ui divider"></div>
+          <div style="margin-bottom: -1em">
+            <h4>Other requirements</h4>
+            <ul>
+              <li><em>Section title:&nbsp; </em><span id="upl-title"></span></li>
+              <li><em>Keywords:&nbsp; </em><span id="upl-keywords"></span></li>
+              <li><em>Section length:&nbsp; </em><span id="upl-length"></span> words</li>
+              <li>
+                <em>Minimum time before upload:&nbsp; </em>
+                <span id="upl-time"></span> minutes since first download of predecessor's work
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div id="edit-upload">
+          <div class="ui form">
+            <div id="upl-instr-anchor" class="field">
+              <label>Upload instruction</label>
+            </div>
+            <div id="upl-files-field" class="fluid field">
+              <label>Required files</label>
+              <input id="upl-files-inp" placeholder="pattern (see format below)"
+                     type="text" style="font-family: monospace">
+              <div id="upl-files-hint"><em>Format:</em>
+                for each file (separated by <tt>;</tt>)&nbsp;&nbsp;&nbsp;
+                <tt>prompt:name.ext1,ext2,...</tt>&nbsp;&nbsp;&nbsp;
+                (names must be unique)
+              </div>
+            </div>
+            <div class="fluid field">
+              <label>Required section title</label>
+              <input id="upl-title-inp" placeholder="Title text (leave blank if not required)"
+                     type="text" style="font-family: monospace">
+            </div>
+            <div class="fluid field">
+              <label>Required keywords</label>
+              <input id="upl-keywords-inp" placeholder="keywords (separated by semicolons)"
+                     type="text" style="font-family: monospace">
+            </div>
+            <div class="inline field">
+              <label>Minimum section length:</label>
+              <input id="upl-length-inp" type="text" size="3"> &nbsp;(0 if no length requirement)
+            </div>
+            <div class="inline field">
+              <label>Minimum time before upload:</label>
+              <input id="upl-time-inp" type="text" size="3">
+              <div style="display: inline-block">(minutes since first download of predecessor's work)</div>
+            </div>
+            <button class="mini ui purple button" onclick="modifyStep();">
+              <i class="check square icon"></i>
+              Save changes
+            </button>
+            <button class="mini ui button" onclick="cancelStep();">
+              <i class="cancel icon"></i>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="ui orange bottom attached tab segment" data-tab="review-tab" style="margin-bottom: 0em">
+        <div id="view-review">
+          <h4>
+            Review instruction
+            <div id="edit-review-button" class="ui mini right floated orange icon button"> 
+              <i class="edit icon"></i>
+              Edit
+            </div>
+          </h4>
+          <div id="rev-instr" style="margin-bottom: 0.5em"></div>
+          <div class="ui small basic orange horizontal label">
+            <span id="rev-words"></span>+ words
+          </div>
+          <div class="ui small basic black horizontal label">
+            <i class="clock icon"></i>
+            <span id="rev-time"></span>+ minutes
+          </div>
+          <h4>
+            Specific review items
+            <span style="font-size: small; font-style: italic; font-weight: normal">(click to edit)</span>
+          </h4>
+          <div id="rev-items">
+          </div>
+          <div id="add-item-button" class="ui mini orange icon button"
+               onclick="editItem(0, true);"> 
+            <i class="plus icon"></i>
+            Add item
+          </div>
+        </div>
+        <div id="edit-review">
+          <div class="ui form" >
+            <div id="rev-instr-anchor" class="field">
+              <label>Review instruction</label>
+            </div>
+            <div class="inline field">
+              <label>Minimum word count:</label>
+              <input id="rev-words-inp" type="text" size="4"> &nbsp;(0 if no length requirement)
+            </div>
+            <div class="inline field">
+              <label>Minimum time before submission:</label>
+              <input id="rev-time-inp" type="text" size="4">
+              &nbsp;(minutes since first download of predecessor's work)
+            </div>
+            <button class="mini ui orange button" onclick="modifyStep();">
+              <i class="check square icon"></i>
+              Save changes
+            </button>
+            <button class="mini ui button" onclick="cancelStep();">
+              <i class="cancel icon"></i>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+ </div>
+</div>
+
+<div id="edit-item-modal" class="ui modal">
+  <div class="header">
+    <span id="item-modal-action">Edit</span> <span id="item-modal-category">review</span> item
+  </div>
+  <div class="content">
+    <div class="ui form" >
+      <div class="inline field">
+        <label>Item name:</label>
+        <input id="item-name-inp" size="40">
+      </div>
+      <div id="item-instr-anchor" class="field">
+        <label>Item instruction</label>
+      </div>
+      <div class="fields" style="margin-top: -0.5em; margin-bottom: 0.25em">
+        <div class="inline field" style="padding-top: 0.4em">
+          <div class="ui checkbox">
+            <input id="item-no-cmnt-inp" type="checkbox" value="NC">
+            <label style="margin-right: 2em; font-weight: bold">No comment</label>
+          </div>
+        </div>
+        <div class="inline field" style="margin-right: 2em">
+          <label>Min. word count:</label>
+          <input id="item-words-inp" size="3">
+        </div>
+      </div>
+      <div class="sixteen wide field">
+        <label>Appraisal:&nbsp;&nbsp;
+          <span style="font-size: small; font-weight: normal; margin-left:">
+            (e.g., <tt>score:10:dropdown</tt> &nbsp;or&nbsp; <tt>rating:3:star</tt>
+            &nbsp;or&nbsp; <tt>icons:thumbs up=green:thumbs down=red</tt>)
+          </span>
+        </label>
+        <input id="item-appr-inp" size="60">
+      </div>
+    </div>
+  </div>
+  <div class="actions">
+    <div id="item-modal-button" class="ui small orange approve labeled icon button">
+      <span id="item-modal-button-text">Save changes</span>
+      <i class="check icon"></i>
+    </div>
+    <div class="ui small cancel labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="delete-item-modal" class="ui small modal">
+  <div class="header">
+    Really delete this item?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete item <span id="del-item-nr"></span>
+      (<span id="del-item-name"></span>) from this template.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui small cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui small red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="delete-step-modal" class="ui small modal">
+  <div class="header">
+    Really delete this step?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete Step <span id="del-step-nr"></span>
+      (<span id="del-step-name"></span>) from this template.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui small cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui small red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="delete-template-modal" class="ui small modal">
+  <div class="header">
+    Really delete this template?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete relay template
+      <span id="del-e-name" style="font-style: italic"></span>.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui small cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui small red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+
+{% endblock page_content %}

@@ -1,0 +1,330 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% block component_inits %}
+
+{% if hex %}
+  $('#code-edit').val('{{hex}}');
+  testCode();  {# make AJAX call if URL contains authentication code #}
+{% endif %}
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+
+var DATA_URL;
+var BADGE_OUTLINE_URL = '{% static 'presto/images/badge-outline.png' %}';
+
+function pluralS(n, noun) {
+  return n + ' ' + noun + (n == 1 ? '' : s);
+}
+
+function testCode() {
+  var code = $('#code-edit').val().trim();
+  $('#code-edit').val('');
+  $('#file-edit').val('');
+  $('#preview').attr('src', BADGE_OUTLINE_URL);
+  var obj = {a: 'authenticate letter', c: code};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      var json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+			  if (json.r == 'INVALID') {
+				  $('#auth-code').text(code);
+				  $('#bad-loa-msg').show();
+				} else {
+					$('#loa-date-issued').text(json.DI);
+					$('#loa-full-name').text(json.FN);
+					$('#loa-email').text(json.EM);
+					$('#loa-extra-hours').text();
+					if (json.RID > 0) {
+  					$('#loa-type').text('referee');
+  					$('#loa-task').html('the extra effort (estimated at ' + pluralS(json.XH, 'hour') +
+						  (json.XH != 1 ? 's' : '') + ' of arbitrating on ' + pluralS(json.XH, 'appeal') +
+						  ' raised in ');
+						$('#loa-update-msg').text('Please note that data may have been updated' +
+						  'since your copy of the letter was rendered.')
+					} else {
+  					$('#loa-type').text('participant');
+  					$('#loa-task').html('completion of');
+						$('#loa-update-msg').text('');
+					}
+					$('#badge-project-relay').text(json.PR);
+					$('#loa-step-list').text(json.SL);
+					$('#loa-course-name').text(json.CN);
+					$('#loa-course-code').text(json.CC);
+					$('#loa-course-start').text(json.CSD);
+					$('#loa-course-end').text(json.CED);
+					$('#loa-course-description').html(json.CD);
+					$('#loa-staff-name').text(json.SN);
+					$('#loa-staff-position').text(json.SP);
+					$('#loa-rendering-count').text(json.RC);
+					$('#loa-last-rendered').text(json.TLR);
+				  $('#valid-loa-result').show();
+				}
+				document.getElementById('top-of-page').scrollIntoView();
+			}
+    }
+  });
+}
+
+function testImage() {
+  if (DATA_URL.length > 300000) {
+	  DATA_URL = '';  {# prevent uploads of huge images #}
+	};
+  obj = {a: 'test badge', h: '{{ hex }}', img: DATA_URL};
+  $('#code-edit').val('');
+  $('#file-edit').val('');
+  $('#preview').attr('src', BADGE_OUTLINE_URL);
+  $('#img-upload-btn').removeClass('orange');
+  $('#img-upload-icon').removeClass('check circle outline');
+  $('#img-upload-icon').addClass('notched circle loading');
+  $.post('./ajax', obj, function(response, status, xhr) {
+    $('#img-upload-icon').removeClass('notched circle loading');
+    $('#img-upload-btn').addClass('orange');
+    $('#img-upload-icon').addClass('check circle outline');
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+     	  if (json.r == 'INVALID') {
+				  $('#bad-badge-msg').show();
+				} else {
+					$('#badge-time-issued').text(json.TI);
+					$('#badge-full-name').text(json.FN);
+					$('#badge-email').text(json.EM);
+					$('#badge-levels').text(json.L);
+					if (json.RID) {
+  					$('#badge-type').text('referee');
+  					$('#badge-task').text('having passed the referee exam for');
+					} else {
+  					$('#badge-type').text('participant');
+  					$('#badge-task').text('having completed');
+					}
+					$('#badge-attained-level').text(json.AL);
+					$('#badge-levels').text(json.L);
+					$('#badge-project-relay').text(json.PR);
+					$('#badge-course-name').text(json.CN);
+					$('#badge-course-code').text(json.CC);
+					$('#badge-learning-goals').html(json.lg);
+				  $('#valid-badge-result').show();
+				}
+    		document.getElementById('top-of-page').scrollIntoView();
+			}
+    }
+  });
+}
+
+function clearResult() {
+  $('#bad-loa-msg').hide();
+  $('#bad-badge-msg').hide();
+  $('#valid-loa-result').hide();
+  $('#valid-badge-result').hide();
+}
+
+function showPreview(objFileInput) {
+  clearResult();
+  if (objFileInput.files[0]) {
+    var fileReader = new FileReader();
+    fileReader.onload = function (e) {
+      DATA_URL = e.target.result;
+      $('#preview').attr('src', DATA_URL);
+    }
+	fileReader.readAsDataURL(objFileInput.files[0]);
+  }
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+<h3 id="top-of-page" class="ui header">
+  <i class="certificate icon"></i>
+  <div class="content">
+    Presto Award Verification
+  </div>
+</h3>
+
+<div id="bad-loa-msg" class="ui orange tiny icon message" style="display: none">
+  <i class="warning sign icon"></i>
+  <i class="close icon"></i>
+  <div class="content">
+    <div class="header">
+      Authentication failed
+    </div>
+    Authentication code "<span id="auth-code"></span>" matches no letter of acknowledgment issued by DelftX. 
+  </div>
+</div>
+
+<div id="bad-badge-msg" class="ui orange tiny icon message" style="display: none">
+  <i class="warning sign icon"></i>
+  <i class="close icon"></i>
+  <div class="content">
+    <div class="header">
+      Authentication failed
+    </div>
+    The tested image is not recognized as a valid Project Relay badge. 
+  </div>
+</div>
+
+<div id="valid-loa-result" class="ui blue segment" style="display: none">
+  <div class="ui small header">
+    <i class="check square outline icon"></i>
+    Valid authentication code
+  </div>
+  <p>
+    Our records show that on <span id="loa-date-issued"></span> a <span id="loa-type"></span>
+		letter of acknowledgement has been issued on behalf of <span id="loa-full-name"></span>
+		(<tt><span id="loa-email"></span></tt>).
+  </p>
+  <p>
+    In this letter, DelftX acknowledges <span id="loa-task"></span> the project relay
+		<em><span id="loa-project-relay"></span></em> as part of the course
+		<em><span id="loa-course-name"></span></em> (<span id="loa-course-code"></span>)
+		that ran from <span id="loa-course-start"></span> to <span id="loa-course-end"></span>.
+  </p>
+  <p>
+    The letter has been signed by <span id="loa-staff-name"></span>,
+		<span id="loa-staff-position"></span>.
+  </p>
+	<h5>Course description</h5>
+	<div id="loa-course-description"></div>
+  <p>
+    <small><em>
+		  To date, <span id="loa-rendering-count"></span> copies of this letter
+		  have been rendered (last on <span id="loa-last-rendered"></span>).
+			<span id="loa-update-msg"></span>
+		</em></small>
+  </p>
+</div>
+
+<div id="valid-badge-result" class="ui orange segment" style="display: none">
+  <div class="ui small header">
+    <i class="check circle outline icon"></i>
+    Valid Project Relay badge
+  </div>
+  <p>
+    Our records show that on <span id="badge-time-issued"></span> a <span id="badge-type"></span>
+		badge has been issued to <span id="badge-full-name"></span>
+		(<tt><span id="badge-email"></span></tt>).
+  </p>
+  <p>
+    This badge has been issued as a token of <span id="badge-task"></span> step
+		<span id="badge-attained-level"></span> (of <span id="badge-levels"></span>)
+		of the project relay <em><span id="badge-project-relay"></span></em> as part of the course
+		<em><span id="badge-course-name"></span></em> (<span id="badge-course-code"></span>).
+  </p>
+	<h5>Learning objectives for this step</h5>
+	<div id="badge-learning-goals"></div>
+</div>
+
+<div class="ui two column stackable grid">
+
+  <div class="column">
+		<div class="ui segment">
+			<h4 class="ui header">
+				<i class="envelope outline icon"></i>
+				<div class="content">
+					Verify letter of acknowledgment
+				</div>
+			</h4>
+			<div class="ui basic segment">
+				<img class="ui small left floated image" src="{% static 'presto/images/loa-sample.png' %}">
+				<p>
+					Project relay acknowledge&shy;ment letters are issued as PDF documents
+				  that feature a unique 32-digit authentication code in the upper left corner.
+				</p>
+				<p>
+				  You can verify the authenticity of the letter either by clicking on this code,
+				  or by copying it to the input field below. If the code is valid, the details on the
+				  letter will be shown, allowing you to verify whether they match with the document text.
+				</p>
+			</div>
+			<form class="ui form">
+				<div class="fluid field">
+  				<label>Authentication code:</label>
+					<input id="code-edit" type="text" maxlength="32" placeholder="(32 hexadecimal digits)"
+					       onchange="clearResult();">
+				</div>
+  			<div class="ui tiny blue icon button"
+  					 onclick="testCode();">
+					<i class="check square icon"></i>
+					Test
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<div class="column">
+		<div class="ui segment">
+		  <h4 class="ui header">
+			  <i class="shield alternate icon"></i>
+			  <div class="content">
+				  Verify badge
+			  </div>
+		  </h4>
+    	<div class="ui basic segment">
+        <img id="preview" class="ui small left floated image"
+             src="{% static 'presto/images/badge-outline.png' %}">
+        <p>
+          Project relay badges are issued as PNG images that feature a circle with
+          a runner icon similar to the image on the left. The image itself contains
+          invisible markings that encrypt infor&shy;mation on the achievement represented
+          by the badge.
+        </p>
+        <p>
+          You can verify the authenticity of a badge by first saving it as a PNG file
+          and then loading this file into the input field below. If the badge is valid,
+          the information it contains on will be shown.
+        </p>
+      </div>
+  		<form class="ui form">
+				<div class="fluid field">
+				  <label>Badge image file:</label>
+  				<input id="file-edit" type="file" style="padding-top: 0.46em; padding-bottom: 0.46em"
+								 onChange="showPreview(this);">
+				</div>
+				<div id="img-upload-btn" class="ui tiny orange icon button"
+						 onclick="testImage();">
+					<i id="img-upload-icon" class="check circle outline icon"></i>
+					Test
+				</div>
+			</form>
+		</div>
+	</div>
+
+</div>
+{% endblock page_content %}

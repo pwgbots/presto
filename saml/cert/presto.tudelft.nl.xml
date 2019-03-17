@@ -1,0 +1,19 @@
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://presto.tudelft.nl">
+  <md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor>
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>
+
+         </ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://presto.tudelft.nl/saml2/acs/" index="1"/>
+  </md:SPSSODescriptor>
+  <md:ContactPerson contactType="technical">
+    <md:GivenName>Your_first_name</md:GivenName>
+    <md:SurName>Your_last_name</md:SurName>
+    <md:EmailAddress>your_mail_address</md:EmailAddress>
+  </md:ContactPerson>
+</md:EntityDescriptor>

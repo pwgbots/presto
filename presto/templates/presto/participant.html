@@ -1,0 +1,155 @@
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{# NOTE: this template returns HTML to fill a tab segment of the participant modal of     #}
+{#       course_estafette.html in response to an AJAX call, hence no HTML page head etc.  #}
+<div class="ui small header">
+  <div class="content">
+    Case {{ assign.case.letter}} &mdash; {{ assign.case.name }}
+  </div>
+  <div class="sub header">
+    {% if uploaded %}
+      <small>Submitted on {{ assign.time_uploaded|date:'l, j M Y H:i' }}</small>
+    {% else %}
+      <small><em>Not submitted yet</em></small>
+    {% endif %}
+  </div>
+</div>
+{% if uploaded %}
+  <div class="ui tiny compact stackable menu">
+    <div class="header item">
+      Uploaded work:
+    </div>
+    {% for f in own_file_list %}
+      <a class="item" onclick="window.open('download/{{ f.name }}/{{ own_hex }}', '_blank');">
+        {{ f.prompt }}
+      </a>
+    {% endfor %}
+    {% if own_file_list|length > 1 %}
+      <a class="item" onclick="window.open('download/all-zipped/{{ own_hex }}', '_blank');">
+        <i class="download icon"></i>
+        Download
+      </a>
+    {% endif %}  
+  </div>
+{% endif %}
+{% if review %}
+  <div class="ui small header">
+    Reviewed by {{ review.reviewer.student.dummy_name }}
+    {% if review.assignment.is_selfie %} &nbsp;&nbsp;(self-review){% endif %}
+    on {{ review.time_submitted|date:'l, j M Y H:i'}}
+  </div>
+  <div class="ui {{ s.color }} secondary segment">
+    {{ md_rev|safe }}
+    <label><strong>Rating:</strong></label>
+    <div id="rating-{{ assign.leg.number }}" class="ui star rating" data-rating="{{ review.grade }}" data-max-rating="5"></div>
+  </div>
+  {% if review.is_rejection %}
+    <div class="ui secondary segment">
+      <div class="ui small header">
+        <i class="thumbs down icon"></i>
+        <div class="content">
+          This work has been rejected.
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="ui tiny compact stackable menu" style="margin-bottom: 1em">
+      <div class="header item">
+        Successor's work:
+      </div>
+      {% for f in succ_file_list %}
+        <a class="item" onclick="window.open('download/{{ f.name }}/{{ succ_hex }}', '_blank');">
+          {{ f.prompt }}
+        </a>
+      {% endfor %}
+      {% if succ_file_list|length > 1 %}
+        <a class="item" onclick="window.open('download/all-zipped/{{ succ_hex }}', '_blank');">
+          <i class="download icon"></i>
+          Download
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+  {% if review.appraisal %}
+    <div class="ui small header">
+      <i class="{% if review.appraisal == 1 %}smile{% elif review.appraisal == 2 %}meh{% elif review.appraisal == 3 %}frown{% endif %} icon"></i>
+      <div class="content">
+        Appraised on {{ review.time_appraised|date:'l, j M Y H:i'}}
+      </div>
+    </div>
+    {{ md_appr|safe }}
+    {% if review.is_appeal %}
+      <div class="ui small header">
+        <i class="pointing up icon"></i>
+        <div class="content">
+          Participant has appealed
+        </div>
+      </div>
+    {% endif %}
+    {% if appeal %}
+      <p style="font-size: small; font-style: italic">
+        <span style="white-space: nowrap">Appeal assigned on {{ time_assigned }}.&nbsp;&nbsp;</span>
+        {% if time_viewed %}
+          <span style="white-space: nowrap">Appeal first viewed on {{ time_viewed }}.&nbsp;&nbsp;</span>
+        {% endif %}
+        {% if time_decided %}
+          <span style="white-space: nowrap">Decision pronounced on {{ time_decided }}.</span>
+        {% endif %}
+      </p>
+      {% if time_decided %}
+        <div class="ui small header">
+          <i class="law icon"></i>
+          <div class="content">
+            Referee motivation
+          </div>
+        </div>
+        {{ ref_motiv|safe }}
+        <label><strong>Referee's rating of predecessor's work:</strong></label>
+        <div id="ref-rat-{{ assign.leg.number }}" class="ui star rating" data-rating="{{ ref_rat }}" data-max-rating="5"></div>
+        <p style="margin-top: 0.5em">{{ penalties|safe }}</p>
+        {% if time_pred_appr %}
+          <div>
+            <strong>Predecessor's appraisal of referee decision</strong>:
+            <i class="{{ pred_appr_icon }} icon"></i>
+            &nbsp;&nbsp;<small><em>({{ time_pred_appr }})</em></small>
+          </div>
+          {{ pred_motiv|safe }}
+        {% endif %}
+        {% if time_succ_appr %}
+          <div>
+            <strong>Successor's appraisal of referee decision</strong>:
+            <i class="{{ succ_appr_icon }} icon"></i>
+            &nbsp;&nbsp;<small><em>({{ time_succ_appr }})</em></small>
+          </div>
+          {{ succ_motiv|safe }}
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
+{% endif %}
+

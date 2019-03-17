@@ -1,0 +1,121 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% load presto_filters %}
+
+{% block page_content %}
+<div class="ui medium header">
+  <i class="history icon"></i>
+  <div class="content">
+    Your project relay history
+  </div>
+</div>
+{% if not course_list %}
+  <div class="ui blue tiny icon message">
+    <i class="info circle icon"></i>
+    <i class="close icon"></i>
+    <div class="content">
+      <div class="header">
+        No courses
+      </div>
+      <p>You are not enrolled in any course featuring a project relay.</p>
+    </div>
+  </div>
+{% else %}
+  <div class="ui {% if estafette_list %}top attached{% endif %} secondary segment" style="padding: 0.5em">
+    <small>You are enrolled in:&nbsp; {{ course_list|safe }}</small>
+  </div>
+  {% if estafette_list %}
+    <div class="ui bottom attached tertiary segment" style="padding: 0.5em">
+      <small>You have joined these project relays:&nbsp; {{ estafette_list|safe }}</small>
+    </div>
+  {% endif %}
+  {% if not participations %}
+    <div class="ui blue tiny icon message">
+      <i class="info circle icon"></i>
+      <i class="close icon"></i>
+      <div class="content">
+        <div class="header">
+          No relays
+        </div>
+        <p>You have not participated in any project relays.</p>
+      </div>
+    </div>
+  {% else %}
+    <div class="ui fluid vertical menu">
+    {% for p in participations %}
+      <a class="item" href="history/{{p.hex}}">
+        <div class="ui medium header">
+          <div class="ui blue horizontal label" style="margin-left: 0">
+            {{ p.progress }}
+          </div>
+          {{ p.object.estafette.title|safe }}
+          {% if alias %}
+            <span style="margin-left: 0.5em; font-weight: 500"; white-space: nowrap>
+              ({{ alias }})
+            </span>
+          {% elif p.object.student.dummy_index > 0 %}
+            <span style="margin-left: 0.5em; font-weight: 500; white-space: nowrap">
+              ("dummy" # {{ p.object.student.dummy_index }})
+            </span>
+          {% endif %}  
+          {% if p.object.estafette.is_hidden %}
+            <div class="ui small horizontal label" style="padding-right: 0px"
+                 data-tooltip="Invisible to students">
+              <i class="hide icon"></i>
+            </div>
+          {% endif %}
+          {% if p.object.estafette.is_archived %}
+            <div class="ui small horizontal label" style="padding-right: 0px"
+                 data-tooltip="Uploads have been archived">
+              <i class="archive icon"></i>
+            </div>
+          {% endif %}
+          <div class="sub header">
+            <span style="font-size: small; white-space: nowrap">
+              {{ p.lang|phrase:'Runs_from' }}&nbsp; {{ p.start }}
+            </span>
+            <span style="font-size: small; white-space: nowrap">
+              {{ p.lang|phrase:'through' }}&nbsp; {{ p.end }}.
+            </span><br/>
+            <span style="font-size: small; white-space: nowrap">
+              {{ p.next_deadline.label }}:
+            </span>
+            <div class="ui small {{ p.next_deadline.color }} horizontal label">
+              {{ p.next_deadline.time }}
+            </div>
+          </div>
+        </div>
+      </a>
+    {% endfor %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock page_content %}

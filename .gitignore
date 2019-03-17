@@ -1,0 +1,18 @@
+# ignore compiled Python files
+*.pyc
+
+# ignore pickle files
+*.pkl
+
+# ignore the database
+db.sqlite3
+
+# ignore log files
+*.log
+
+# ignore uploads
+upload/*
+
+presto-project/settings_local.py
+
+/static

@@ -1,0 +1,647 @@
+{% extends "instructor.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block headlines %}
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+.ql-container {
+  font-family: Lato;
+  font-size: 16px;
+}
+.ql-toolbar.ql-snow {
+  padding: 2px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+{% endblock styles %}
+
+{% block component_inits %}
+$('select.dropdown').dropdown();
+
+$('#editor-dropdown').dropdown({
+  onChange: function(value, text, choice) {
+    updateEditors('add', value);
+  }
+});
+
+$('#instance-warning').hide();
+$('#edit-estafette').hide();
+$('#case-segment').hide();
+$('#edit-case').hide();
+
+DELTA = Quill.import('delta');
+
+QUILL = new Quill('#quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [2, 3, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      ['link', 'blockquote', 'image'],
+      [{ list: 'ordered' }, { list: 'bullet' }]
+    ]
+  },
+  placeholder: '(item instructions)',
+  theme: 'snow',
+  formats: ['bold', 'italic', 'underline', 'script', 'header', 'list', 'link', 'blockquote', 'image']
+});
+
+{% for ec in estafette.cases %}
+  {% if not ec.object.upload %}
+    $('#case-{{ ec.object.letter }}-file-lbl').hide();
+  {% endif %}
+{% endfor %}
+
+$('#case-file-inp').on('change', function() {
+  if (!this.files) return;
+  FILE = this.files[0];
+  if (FILE.size / 1048576 > {{ max_file_size }}) {
+    alert('File size exceeds {{ max_file_size }} MB');
+    FILE = null;
+    $('#case-file-inp').val('');
+    return false;
+  }
+});
+
+$('#remove-case-file-btn').click(function() {
+  $('#remove-case-file-btn').hide();
+  $('#keep-case-file-btn').show();
+});
+
+{% if estafette.object.published %}
+  $('#publish-estafette-button').hide();
+{% else %}
+  $('#withdraw-estafette-button').hide();
+{% endif %}
+
+$('#delete-estafette-button').click(function() {
+  $('#delete-estafette').modal('show')
+});
+
+$('#delete-estafette').modal({
+  onApprove: function() {
+    window.location.replace('./instructor/delete-estafette/{{ estafette.hex }}');
+  }
+});
+
+$('#edit-estafette-button').click(function() {
+  $('#view-estafette').hide();
+  openQuill('(estafette description)', LAST_JSON.d, 'estafette-desc-anchor');  
+  $('#edit-estafette').show();
+});
+
+$('#edit-case-button').click(editCase);
+
+$('#add-case-button').click(function() {
+  window.location.replace('./estafette/add-case/{{ estafette.hex }}');
+});
+
+$('#delete-case-button').click(function() {
+  $('#del-case-letter').text(SELECTED_CASE);
+  $('#del-case-name').text($('#case-name-' + SELECTED_CASE).text());
+  $('#delete-case-modal').modal('show')
+});
+
+$('#delete-case-modal').modal({
+  onApprove: function() {
+    window.location.replace('./estafette/delete-case/' + SELECTED_HEX);
+  }
+});
+
+$('#publish-estafette-button').click(function() {
+  obj = {a: 'publish estafette', h: '{{ estafette.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+      $('#publish-estafette-button').hide();
+      $('#withdraw-estafette-button').show();
+    }
+  });
+});
+
+$('#withdraw-estafette-button').click(function() {
+  obj = {a: 'withdraw estafette', h: '{{ estafette.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+      $('#withdraw-estafette-button').hide();
+      $('#publish-estafette-button').show();
+    }
+  });
+});
+
+getEstafette();
+updateEditors('list');
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+var SELECTED_CASE = '', SELECTED_HEX = '', LAST_JSON = '{}', FILE = null;
+var DELTA, QUILL, UPLOADS;
+
+function openQuill(placeholder, content, anchor) {
+  QUILL.root.setAttribute('data-placeholder', placeholder);
+  QUILL.setContents([{ insert: '\n' }]);
+  QUILL.pasteHTML(content);
+  QUILL.setSelection(0, 0);
+  $('#quill-container').appendTo($('#' + anchor));
+  /*
+  setTimeout(function() {
+    QUILL.container.querySelector('.ql-editor').firstChild.scrollIntoView();
+    }, 200
+  );
+  */
+}
+
+function getEstafetteData(json) {
+  LAST_JSON = json;
+  $('#estafette-name').html(json.n);
+  $('#estafette-name-inp').val(json.n);
+  $('#del-e-name').html(json.n);
+  $('#estafette-edits').html(json.e);
+  $('#estafette-desc').html(json.d);
+  if (json.cnt == 0) {
+    $('#instance-warning').hide();
+    $('#delete-estafette-button').show();
+  } else {
+    $('#instance-cnt').text(json.cnt);
+    if (json.cnt == 1) {
+      $('#plural-s').hide();
+    } else {
+      $('#plural-s').show();
+    }
+    $('#instance-warning').show();
+    $('#delete-estafette-button').hide();
+  }
+  $('#case-segment').hide();
+  $('#edit-estafette').hide();
+  $('#view-estafette').show();
+}
+
+function getEstafette() {
+  var obj = {a: 'get estafette', h: '{{ estafette.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      var json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getEstafetteData(json);
+      }
+    }
+  });
+}
+
+function updateEditors(action, hex='') {
+  var obj = {a: action + ' case editor', h: '{{ estafette.hex }}', ed: hex};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        m = '<div class="item"><strong>Editors:</strong></div>' +
+          '<div class="item"><i class="cube icon"></i>{{ estafette.owner }}</div>';
+        for (ed in json.eds) {
+          {% if estafette.owned %}
+          m += '<a class="item" onclick="updateEditors(\'remove\', \'' +
+               json.eds[ed].hex + '\');">' + json.eds[ed].name +
+               '<div class="small ui icon"><i class="red remove icon"></i></div></a>';
+          {% else %}
+          m += '<div class="item">' + json.eds[ed].name + '</div>';
+          {% endif %}
+        }
+        $('#editor-menu').html(m);
+        $('#editor-dropdown').dropdown('clear');
+      }
+    }
+  });
+}
+
+function modifyEstafette() {
+  obj = {
+    a: 'modify estafette',
+    h: '{{estafette.hex}}',
+    n: $('#estafette-name-inp').val(),
+    d: QUILL.container.querySelector('.ql-editor').innerHTML
+  };
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getEstafetteData(json);
+      }
+    }
+  });
+}
+
+function restoreEstafette() {
+  getEstafetteData(LAST_JSON);
+}
+
+function editCase() {
+  openQuill('(case description)', LAST_JSON.d, 'case-desc-anchor');
+  $('#case-keywords-inp').val(LAST_JSON.k);
+  $('#case-file-inp').val('');
+  FILE = null;
+  $('#view-case').hide();
+  $('#edit-case').show();
+}
+
+function getCaseData(json) {
+  LAST_JSON = json;
+  $('#case-name-inp').val(json.n);
+  $('#case-name-' + SELECTED_CASE).html(json.n);
+  $('#case-title').html('Case ' + SELECTED_CASE + ' &ndash; ' + json.n);
+  $('#case-edits').html(json.e);
+  if (json.acnt == 0) {
+    $('#delete-case-button').show();
+  } else {
+    $('#delete-case-button').hide();
+  }
+  $('#case-desc').html(json.d);
+  $('#case-keywords').html(json.k);
+  if (json.u) {
+    $('#case-attachment-name').text(json.u);
+    $('#download-case-file-btn').attr('href', 'download/case/' + SELECTED_HEX);
+    $('#remove-case-file-btn').show();
+    $('#keep-case-file-btn').hide();
+    $('#case-attachment').show();  
+    $('#case-' + SELECTED_CASE + '-file-lbl').show();
+    $('#current-case-file-name').text(json.u);
+    $('#current-case-attachment').show();  
+  } else {
+    $('#case-attachment').hide();
+    $('#case-' + SELECTED_CASE + '-file-lbl').hide();
+    $('#current-case-attachment').hide();  
+  }
+  $('#view-estafette').hide();
+  $('#edit-case').hide();
+  $('#view-case').show();
+  $('#case-segment').show();
+}
+
+function selectCase(cl, hex) {
+  NEW_CASE = cl;
+  NEW_HEX = hex;
+  if (NEW_CASE != SELECTED_CASE && $('#edit-case').is(':visible')) {
+    alert('Please save changes, or cancel.');
+    return false;
+  }
+  switchCase();
+}
+
+function switchCase() {
+  $('#case-item-' + SELECTED_CASE).removeClass('active');
+  SELECTED_CASE = NEW_CASE;
+  $('#case-item-' + SELECTED_CASE).addClass('active');
+  SELECTED_HEX = NEW_HEX;
+  if (NEW_CASE === '') {
+    getEstafette();
+    return;
+  }
+  var obj = {a: 'get case', h: SELECTED_HEX}
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getCaseData(json);
+      }
+    }
+  });
+}
+
+function cancelCase() {
+  getCaseData(LAST_JSON);
+}
+
+function modifyCase() {
+  var fd = new FormData();
+  fd.append('a', 'modify case');
+  fd.append('h', SELECTED_HEX);
+  fd.append('n', $('#case-name-inp').val());
+  fd.append('d', QUILL.container.querySelector('.ql-editor').innerHTML);
+  fd.append('r', $('#keep-case-file-btn').is(':visible'));
+  fd.append('k', $('#case-keywords-inp').val());
+  fd.append('u', FILE);
+  $.ajax({
+    url: './ajax',  
+    type: 'POST',
+    data: fd,
+    cache: false,
+    dataType: 'json',
+    processData: false,
+    contentType: false,
+    success: function(response, textStatus, jqXHR) {
+      if (textStatus != 'success' || response.error != null) {
+        var err = response.error;
+        if (textStatus != 'success') err += '(' + textStatus + ')';
+        alert('Error: ' + err);
+      } else {
+        getCaseData(response);
+      }
+    },
+    error: function(jqXHR, textStatus, errorThrown) {
+      alert('Server error: ' + textStatus);
+    }
+  });
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+<div id="instance-warning" class="ui orange tiny icon message" hidden="hidden">
+  <i class="warning sign icon"></i>
+  <i class="close icon"></i>
+  <div class="content">
+    <div class="header">
+      This case set is used by <span id="instances">1</span> course<span id="plural-s"></span>
+    </div>
+    This means that you cannot delete this case set.<br/>
+    Please note that any change you make will affect the ongoing project relays.
+  </div>
+</div>
+<div class="ui basic clearing segment" style="padding: 0 0; margin: 1em 0 0 0">
+  <h2 class="ui left floated header">
+    <i class="flag icon"></i>
+    <div id="estafette-name" class="content">{{ estafette.object.name }}</div>
+  </h2>
+  <button id="delete-estafette-button" class="ui right floated basic red button">
+    <i class="trash icon"></i>
+    Delete
+  </button>
+</div>
+
+<div id="editor-menu" class="ui compact stackable secondary menu" style="margin-left: -1em">
+  {# menu is filled by updateEditors(...) #}
+</div>
+
+{% if estafette.owned %}
+  <div id="editor-dropdown" class="ui selection dropdown">
+    <input name="editor-inp" type="hidden">
+    <i class="dropdown icon"></i>
+    <div class="default text">(add editor)</div>
+    <div class="menu">
+    {% for s in staff %}
+      <div class="item" data-value="{{ s.hex }}">{{ s.name }}</div>
+    {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+<div class="ui basic segment" style="padding: 0 0; margin: 1em 0 0 0">
+ <div class="ui stackable grid">
+  <div class="four wide column">
+    <div class="ui small fluid vertical right pointing menu">
+      <a id="case-item-" class="active item" onclick="selectCase('', '')">
+        <h4 class="ui header">Case set properties</h4>
+        <p style="margin-top: -1em">Name, description, visibility</p>
+      </a>
+    {% for ec in estafette.cases %}
+      <a id="case-item-{{ ec.object.letter }}" class="item"
+         onclick="selectCase('{{ ec.object.letter }}', '{{ ec.hex }}');">
+        <h4 class="ui header">
+          Case {{ ec.object.letter }}
+          <div id="case-{{ ec.object.letter }}-file-lbl"
+               class="ui empty horizontal blue circular label"></div>
+        </h4>
+        <p id="case-name-{{ ec.object.letter }}" style="margin-top: -1em">{{ ec.object.name }}</p>
+      </a>
+      {% endfor %}
+    </div>
+    <button id="add-case-button" class="ui primary button" style="margin-bottom: 1em">
+      <i class="plus icon"></i>
+      Add case
+    </button>
+  </div>
+  <div class="twelve wide column">
+    <div id="view-estafette" class="ui segments">
+      <div id="estafette-edits" class="ui secondary segment"
+           style="font-size: x-small; line-height: 1.5em">
+        {{ estafette.edits }}
+      </div>
+      <div id="estafette-desc" class="ui segment">
+        {{ estafette.object.description|safe }}
+      </div>
+      <div class="ui basic clearing segment">
+        <div id="edit-estafette-button" class="ui mini left floated blue icon button"
+             style="margin-top:-1em"> 
+          <i class="edit icon"></i>
+          Edit
+        </div>
+        <div id="withdraw-estafette-button" class="ui mini right floated basic black button"
+             style="margin-top:-1em">
+          <i class="hide icon"></i>
+          Withdraw
+        </div>
+        <div id="publish-estafette-button" class="ui mini right floated black button"
+             style="margin-top:-1em">
+          <i class="unhide icon"></i>
+          Publish
+        </div>
+      </div>
+    </div>
+    <div id="edit-estafette" class="ui blue segment" style="margin:0em -0.5em !important">
+      <div class="ui form" >
+        <div class="fluid inline field">
+          <label>Case set name:</label>
+          <input id="estafette-name-inp" type="text" value="{{ estafette.object.name }}">
+        </div>
+        <div id="estafette-desc-anchor" class="field">
+          <label>Case set description:</label>
+          <div id="quill-container">
+            <div id="quill-editor" style="height: 200px"></div>
+          </div>
+        </div>
+        <button class="ui mini primary button" onclick="modifyEstafette();">
+          <i class="check square icon"></i>
+          Modify
+        </button>
+        <button class="ui mini button" type="cancel" onclick="restoreEstafette();">
+          <i class="cancel icon"></i>
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <div id="case-segment" class="ui segment" style="margin: 0em -0.5em !important">
+      <h4 class="ui header">
+        <span id="case-title"></span>
+        <div id="delete-case-button" class="ui mini right floated basic red icon button"> 
+          <i class="trash icon"></i>
+          Delete this case
+        </div>
+        <div id="case-edits" class="sub header" style="font-size: x-small"></div>
+      </h4>
+      <div id="view-case" class="ui black segment" style="margin-bottom: 0em">
+        <h4>
+          Case description
+          <div id="edit-case-button" class="ui mini right floated blue icon button"> 
+            <i class="edit icon"></i>
+            Edit
+          </div>
+        </h4>
+        <div id="case-desc" class="ui basic segment" style="margin: -1.1em -0.5em -1em -0.9em">
+        </div>
+        <div id="case-attachment" class="ui basic segment" style="padding: 0">
+          <strong>Attachment:</strong> <span id="case-attachment-name"></span>
+          <a id="download-case-file-btn" class="ui mini black icon button" style="margin-left: 1em"
+             href="" target="_blank">
+            <i class="download icon"></i>
+            Download
+          </a>
+        </div>
+        <div class="ui basic segment" style="padding: 0">
+          <strong>Required key words:</strong>
+          <span id="case-keywords"></span>
+        </div>
+      </div>
+      <div id="edit-case" class="ui blue segment" style="margin-bottom: 0em">
+        <div class="ui form" >
+          <form id="case-form" enctype="multipart/form-data" style="margin-bottom: 1em">
+            <div class="inline field">
+              <label>Name:</label>
+              <input id="case-name-inp" type="text" size="40">
+            </div>
+            <div id="case-desc-anchor" class="field">
+              <label>Description:</label>
+            </div>
+            <div id="current-case-attachment" style="margin-bottom: 1em">
+              <strong>Attachment:</strong>
+              <span id="current-case-file-name" style="margin-right: 1em"></span>
+              <div id="remove-case-file-btn" class="ui mini basic red icon button">
+                <i class="remove icon"></i>
+                Remove
+              </div>
+              <div id="keep-case-file-btn" class="ui mini basic black icon button">
+                <i class="remove icon"></i>
+                Will be removed
+              </div>
+            </div>
+            <div class="field">
+              <label>Upload:</label>
+              <input id="case-file-inp" type="file">
+              <small><em>(optional, max. {{ max_file_size }} MB)</em></small>
+            </div>
+            <div class="field">
+              <label>Required key words:</label>
+              <input id="case-keywords-inp" type="text"
+                     placeholder="(optional - separate by semi-colons)">
+            </div>
+          </form>
+          <button class="mini ui blue button" onclick="modifyCase();">
+            <i class="check square icon"></i>
+            Save changes
+          </button>
+          <button class="mini ui button" onclick="cancelCase();">
+            <i class="cancel icon"></i>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+ </div>
+</div>
+
+<div id="delete-case-modal" class="ui small modal">
+  <div class="header">
+    Really delete this case?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete Case <span id="del-case-letter"></span>
+      (<span id="del-case-name" style="font-style: italic"></span>) from this case set.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="delete-estafette-modal" class="ui small modal">
+  <div class="header">
+    Really delete this case set?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete case set <span id="del-e-name" style="font-style: italic"></span>.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+{% endblock page_content %}

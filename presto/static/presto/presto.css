@@ -1,0 +1,95 @@
+/* additional CSS not defined via the Semantic US framework */
+
+/* Credits for the fixed header & footer styles (Site...) go to Philip Walton
+ * https://philipwalton.com/articles/normalizing-cross-browser-flexbox-bugs
+ */
+.Site {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 1, 3 */
+}
+
+.Site-header,
+.Site-footer {
+  flex: none; /* 2 */
+}
+
+.Site-footer {
+  color: white;
+  background: #00A6C6;
+  margin-top: 1em;
+}
+
+.Site-content {
+  flex: 1 0 auto; /* 2 */
+  padding: var(--space) var(--space) 0;
+  width: 100%;
+  margin-top: 0.5em;
+}
+.Site-content::after {
+  content: '\00a0'; /* &nbsp; */
+  display: block;
+  margin-top: var(--space);
+  height: 0px;
+  visibility: hidden;
+}
+@media (--break-lg) {
+  .Site-content {
+    padding-top: var(--space-lg);
+  }
+  .Site-content::after {
+    margin-top: var(--space-lg);
+  }
+}
+
+.Site-content--full {
+  padding: 0;
+}
+.Site-content--full::after {
+  content: none;
+}
+
+/* patch of Semantic UI grid to remove spacing between stacked elements */
+@media only screen and (max-width: 767px) {
+  .ui.stackable.grid > .column:not(.row) {
+    padding: 0 !important;
+  }
+  .ui.stackable.grid > .column:first-child {
+    padding-top: 1rem !important;
+  }
+  .ui.stackable.grid > .column:last-child {
+    padding-bottom: 1rem !important;
+  }
+}
+
+/* makes the user name in the header stand out a bit */
+.user-name {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* makes assignment code look like Semantic UI label */
+.a-code {
+  color: white;
+  font-weight: 900;
+  font-size: 85%;
+  background: #00A6C6;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+p {
+  margin-bottom: 0.5em;
+}
+
+.ql-editor p {
+  margin-bottom: 0.65em;
+}
+
+.ql-editor ol {
+  margin-bottom: 0.65em;
+}
+
+.ql-editor ul {
+  margin-bottom: 0.65em;
+}

@@ -1,0 +1,113 @@
+{% extends "estafette_history.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% block upper_part %}<!-- NO UPPER PART -->{% endblock upper_part %}
+{% block history_header %}<!-- NO HEADER -->{% endblock history_header %}
+{% block estafette_properties %}
+
+{# display the participant's progress bar to facilitate navigation #}
+{# NOTE: the javascript function displaying the modal must move this DIV to the modal's header DIV #}
+{% if things_to_do.0.assigned %}
+  <div id="progress-bar" class="ui basic segment" style="display: inline-block; white-space: nowrap; padding: 2px">
+    <div style="display: inline-block; background: rgb(235,235,235); white-space: nowrap; padding: 1px; border: 1px solid rgb(235,235,235); border-radius: 4px 0 0 4px; height: 2.2em">  
+      <div class="ui olive circular label" data-tooltip="{{ things_to_do.0.assigned_tip }}" data-inverted="">&#9654;</div>
+      {% for t in things_to_do %}
+
+        {% if t.step %}
+
+          {% if t.step > 1 and t.assigned %}
+            <a class="ui mini olive circular label" onclick="document.getElementById('rh-{{ t.step }}-assigned').scrollIntoView();" data-tooltip="{{ t.assigned_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+          {% endif %}
+          {% if t.downloaded %}
+            <a class="ui mini blue circular label" onclick="document.getElementById('rh-{{ t.step }}-downloaded').scrollIntoView();" data-tooltip="{{ t.downloaded_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+          {% endif %}
+          {% if t.reviewed %}
+            <a class="ui mini orange circular label" onclick="document.getElementById('rh-{{ t.step }}-reviewed').scrollIntoView();" data-tooltip="{{ t.reviewed_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+          {% endif %}
+          {% if t.uploaded %}
+            <a class="ui purple circular label" onclick="document.getElementById('rh-{{ t.step }}-uploaded').scrollIntoView();" data-tooltip="{{ t.uploaded_tip }}" data-inverted="">{{ t.step }}</a>
+          {% endif %}
+
+        {% elif t.review %}
+
+          {# final review #}
+          {% if t.downloaded %}
+            <a class="ui mini blue circular label" onclick="document.getElementById('rh-fr{{ t.review }}-downloaded').scrollIntoView();" data-tooltip="{{ t.downloaded_tip }} " data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+          {% endif %}
+          {% if t.reviewed %}
+            <a class="ui orange circular label" onclick="document.getElementById('rh-fr{{ t.review }}-reviewed').scrollIntoView();" data-tooltip="{{ t.reviewed_tip }}" data-inverted="">&star;</a>
+          {% endif %}
+        {% endif %}
+
+      {% endfor %}
+    </div>
+
+    {% with things_to_do|last as last_thing %}
+      {% if not last_thing.finish %}
+
+    <div style="display: inline-block; white-space: nowrap; padding: 1px; margin-left:-2px; border: 1px solid rgb(235,235,235); border-radius: 0 4px 4px 0; height: 2.2em; margin-left: -4px">  
+      {% for t in things_to_do %}
+        {% if t.step %}
+          {% if t.step > 1 and not t.assigned %}
+            <div class="ui mini basic olive circular label" data-tooltip="{{ t.assigned_tip }}" style="min-width: 10px; min-height: 10px"></div>
+          {% endif %}
+          {% if t.step > 1 and not t.downloaded %}
+            <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }}" style="min-width: 10px; min-height: 10px"></div>
+          {% endif %}
+          {% if t.step > 1 and not t.reviewed %}
+            <div class="ui mini basic orange circular label" data-tooltip="{{ t.reviewed_tip }}" style="min-width: 10px; min-height: 10px"></div>
+          {% endif %}
+          {% if not t.uploaded %}
+            <div class="ui basic purple circular label" data-tooltip="{{ t.uploaded_tip }}">{{ t.step }}</div>
+          {% endif %}
+        {% elif t.review %}
+          {# final review #}
+          {% if not t.downloaded %}
+            <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }} " style="min-width: 10px; min-height: 10px"></div>
+          {% endif %}
+          {% if not t.reviewed %}
+            <div class="ui basic orange circular label" data-tooltip="{{ t.reviewed_tip }}">&star;</div>
+          {% endif %}
+        {% elif t.finish %}
+          <a class="ui big label" onclick="document.getElementById('rh-finish').scrollIntoView();" data-tooltip="Finish @ {{ t.finish }}" data-inverted="" style="padding: 0 !important; min-height: 15px">
+            <i class="checkered flag icon" style="margin-right: 0 !important"></i>
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+      {% endif %}
+    {% endwith %}
+
+  </div>
+{% endif %}
+
+{% endblock estafette_properties %}
+{% block progress_modal %}<!-- NO PROGRESS MODAL -->{% endblock progress_modal %}
+{% block lower_part %}<!-- NO LOWER PART -->{% endblock lower_part %}

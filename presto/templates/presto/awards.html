@@ -1,0 +1,230 @@
+{% extends "base-with-menus.html" %}
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+#inline-btn {
+  background-color: rgb(0, 166, 240);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px 4px;
+  color: white;
+}
+
+#badge-caption {
+  font-family: monospace;
+  font-size: small;
+  margin: -0.5em 2em 0.5em;
+}
+
+#badge-html {
+  font-family: monospace;
+  font-size: x-small;
+  white-space: pre;
+  margin: -0.5em 2em 0.5em;
+}
+{% endblock styles %}
+
+{% block component_inits %}
+$('#show-badge-modal').modal();
+{% endblock component_inits %}
+
+{% block javascripts %}
+function showBadge(type, hex) {
+  {# NOTE: as loading a new badge may be slow, first revert to the sample badge #}
+  $('#show-badge-img').attr('src', '{% static 'presto/images/badge-outline.png' %}');
+  $('#show-badge-img').attr('src', './badge/' + hex);
+  $('#badge-type').text(type);
+  var url = '{{ base_url }}'.replace(/[\\\/]$/, '');
+  $('#badge-html').text('<a href="' + url + '/verify/badge/' + hex + '"\n   target="_blank"\n' +
+     '   title="This badge can be verified at ' + url + '/verify">\n' +
+     '  <img src="(URL of the PNG image, or the data URI)">\n' +
+     '</a>');
+  $('#show-badge-modal').modal('show');
+}
+
+function copyURI() {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = getDataUri();
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    $('#inline-btn').css('background-color', 'rgb(236, 127, 44)');
+    setTimeout(function() {
+      $('#inline-btn').css('background-color', 'rgb(0, 166, 240)');
+    }, 300);
+  } catch {
+    alert('Failed to copy URI to clipboard');
+  }
+} 
+
+function getDataUri() {
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 256;
+  ctx.drawImage(document.getElementById('show-badge-img'), 0, 0);
+  return canvas.toDataURL()
+}
+{% endblock javascripts %}
+
+{% block page_content %}
+<h3 class="ui header">
+  <i class="shield alternate icon"></i>
+  <div class="content">
+    Badges
+  </div>
+</h3>
+<p>Click on a badge to view it full-size with guidance on how to publish it.</p>
+
+{% if not participant_badges %}
+  <h4>You have no participant badges yet.</h4>
+{% else %}
+  <h4>Your participant badges</h4>
+  <div class="ui tiny images">
+  {% for b in participant_badges %}
+    <img class="ui tiny image" {# NOTE: to preserve layout, do NOT split the title over more lines #}
+         title="{% if b.AL == b.L %}Finished{% else %}Completed step {{ b.AL }} (of {{ b.L }}) of the{% endif %} project relay {{ b.PR|safe }} as part of the course {{ b.CN }} ({{ b.CC }}).
+Badge issued on {{ b.TI }}"
+        src="badge/tiny/{{ b.hex }}"
+        onclick="showBadge('Participant', '{{ b.hex }}')"/>
+  {% endfor %}
+  </div>
+{% endif %}
+
+{% if not referee_badges %}
+  <h4>You have no referee badges yet.</h4>
+{% else %}
+  <h4>Your referee badges</h4>
+  <div class="ui tiny images">
+  {% for b in referee_badges %}
+    <img class="ui image" {# NOTE: to preserve layout, do NOT split the title over more lines #}
+         title="Qualified to referee step {{ b.AL }} (of {{ b.L }}) of the project relay {{ b.PR|safe }}.
+Badge issued on {{ b.TI }}"
+        src="badge/tiny/{{ b.hex }}" style="cursor: pointer"
+        onclick="showBadge('Referee', '{{ b.hex }}')"/>
+  {% endfor %}
+  </div>
+{% endif %}
+
+<h3 class="ui header">
+  <i class="envelope outline icon"></i>
+  <div class="content">
+    Letters of acknowledgement
+  </div>
+</h3>
+{% if not letters %}
+  <h4>You have no letters of acknowledgement yet.</h4>
+{% else %}
+  <div class="ui fluid vertical menu">
+  {% for k, l in letters.items %}
+    {% with d=l.object.as_dict %}
+      <a class="item" href="loa/{{ l.hex }}">
+        <h3 class="ui header">
+          {% if l.object.rendering_count == 0 %}
+            <div class="ui orange horizontal label" style="margin-left: 0">New</div>
+          {% else %}
+            <div class="ui blue horizontal label" style="margin-left: 0"
+                 data-tooltip="{{ l.object.rendering_count }}x
+                     rendered{% if l.object.verification_count %};
+                       {{ l.object.verification_count }}x verified
+                     {% endif %}" >
+              {{ l.object.rendering_count }}
+              {% if l.object.verification_count > 0 %}
+                <span style="color: silver; font-size: small">&nbsp;({{ l.object.verification_count }})</span>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if d.RID == 0 %}Completion of{% else %}Referee role in{% endif %} 
+          {{ d.CC }} <em>{{ d.CN }}</em>
+          <div class="sub header">
+            <em>Issued on</em> {{ d.DI }}
+            {% if d.RID != 0 %}
+              <em>, acknowledging</em> <strong>{{ d.ACC }}</strong>
+              <em>appeal{% if d.ACC != 1 %}s{% endif %} refereed between </em> {{ d.DFC }}
+              <em>and</em> {{ d.DLC }}
+            {% endif %}
+          </div>
+        </h3>
+      </a>
+    {% endwith %}
+  {% endfor %}
+  </div>
+{% endif %}
+
+<div id="show-badge-modal" class="ui small modal">
+  <div class="actions">
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div class="header" style="margin-top: -3em">
+    <i class="shield alternate icon"></i>
+    <span id="badge-type"></span> badge
+  </div>
+  <div class="content">
+    <p>
+      Right-click the image to save it as a PNG image file.
+      Alternatively, click <span id="inline-btn" onclick="copyURI()">here</span>
+      to copy it as a data URI to the clipboard.&nbsp;&nbsp;
+      <a href="https://en.wikipedia.org/wiki/Data_URI_scheme#Examples_of_usage"
+         target="_blank">(Read more on data URI's)</a>
+      
+    </p>
+    <p style="margin-top: -0.5em">
+      <em>Note that any changes to the image will invalidate it as a Presto badge.</em>
+    </p>
+    <img id="show-badge-img" class="ui small image" style="margin: auto"
+             src="{% static 'presto/images/badge-outline.png' %}">
+    <p style="margin-top: 1em">
+      When publishing this badge, you should add this caption:
+    </p>
+    <div id="badge-caption">
+      This badge can be verified at
+      <a href="{{ base_url }}/verify" target="_blank">{{ base_url }}/verify</a>
+    </div>
+    <p>
+      or, if you can do so, embed the image in HTML as shown below:
+    </p> 
+    <div id="badge-html">
+    </div>
+  </div>
+</div>
+
+{% endblock page_content %}

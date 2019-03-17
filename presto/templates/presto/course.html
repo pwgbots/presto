@@ -1,0 +1,797 @@
+{% extends "instructor.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/form.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/form.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/checkbox.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/checkbox.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+  <script src="{% static 'presto/iro.min.js' %}"></script>
+{% endblock headlines %}
+
+{% block styles %}
+span.nbs {
+  white-space: nowrap;
+  margin-right: 1em;
+}
+
+img.selected {
+  border: 3px solid rgb(0, 166, 240);
+  border-radius: 50%;
+}
+
+#unique-msg {
+  font-size: small;
+  color: rgb(220, 0, 0);
+  margin-top: -1em;
+  margin-bottom: 1em;
+  display: none;
+}
+
+.ql-container {
+  font-family: Lato;
+  font-size: 16px;
+}
+.ql-toolbar.ql-snow {
+  padding: 2px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+{% endblock styles %}
+
+{% block component_inits %}
+$('select.dropdown').dropdown();
+$('.ui.checkbox').checkbox();
+
+$('#instructor-dropdown').dropdown({
+  onChange: function(value, text, choice) {
+    updateInstructors('add', value);
+  }
+});
+
+$('#relay-dropdown').dropdown({
+  onChange: function(value, text, choice) {
+    checkUniqueness(value);
+  }
+});
+
+$('#add-estafette-form').form({
+  fields: {
+    relay: 'empty', questionnaire: 'empty', reviews: 'empty',
+    starts: 'empty', revsdue: 'empty', deadline: 'empty', ends: 'empty'
+  }
+});
+
+$('#add-relay-modal').modal({
+  autofocus: false,
+  onShow: function () {
+    $('#add-estafette-form').form('clear');
+    $('#time-warning').html('');
+  },  
+  onApprove: function() {
+    ok = false;
+    $('#add-estafette-form').form('validate form');
+    if ($('#add-estafette-form').form('is valid')) {
+      var s = new Date($('#s-time').val()).getTime(), d = new Date($('#d-time').val()).getTime();
+      var r = new Date($('#r-time').val()).getTime(), e = new Date($('#e-time').val()).getTime();
+      if ((s < d && d <= r && r < e)) {
+        $('#time-warning').html('');
+        ok = $('#unique-msg').is(':hidden');
+      } else {
+        $('#time-warning').html('The times above <strong>must</strong> be sequential.');
+      }
+    }
+    if (ok) $('#add-estafette-form').submit();
+    return ok;
+  }
+});
+
+$('#delete-relay-modal').modal({
+  onApprove: function() {
+    window.location.replace('./course/delete-relay/' + RELAY_TO_DELETE);
+  }
+});
+
+$('#badge-design-modal').modal({
+  onShow: function() {
+    selectDisc(BADGE_DISC);
+    COLOR_PICKER.color.rgb = {
+      r: (BADGE_COLOR >> 16) & 255, g: (BADGE_COLOR >> 8) & 255, b: BADGE_COLOR & 255
+    };
+    updateBadgeImage();
+  },
+  onApprove: modifyBadge
+});
+
+COLOR_PICKER = new iro.ColorPicker("#color-picker-container", {
+  width: 160,
+  height: 160,
+  color: '#000',
+  markerRadius: 6,
+  padding: 1,
+  sliderMargin: 8,
+  sliderHeight: 16,
+  borderWidth: 1,
+  borderColor: '#fff',
+  anticlockwise: true
+});
+
+COLOR_PICKER.on('input:end', updateBadgeImage);
+
+getCourse();
+updateInstructors('list');
+
+QUILL = new Quill('#quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [1, 2, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      ['link']
+    ]
+  },
+{% if course.object.is_edx %}
+  placeholder: '(should state learning objectives)',
+{% endif %}
+  theme: 'snow'
+});
+  
+$('#add-estafette-button').click(function() {
+  $('#add-relay-modal').modal('show');
+});
+
+{% endblock component_inits %}
+
+
+{% block javascripts %}
+
+var LAST_JSON, QUILL, COLOR_PICKER, RELAY_TO_DELETE;
+var BADGE_COLOR = 0, BADGE_DISC = 0, SELECTED_DISC = 0;
+
+function getCourseData(json) {
+  LAST_JSON = json;
+  $('#name').html(json.n);
+  $('#starts').html(json.sd);
+  $('#ends').html(json.ed);
+  $('#manager').html(json.m);
+  $('#signature').html(json.sn);
+  $('#position').html(json.sp);
+  BADGE_COLOR = json.bc;
+  BADGE_DISC = (json.bc >> 24) & 15;
+  if (json.edx) {
+    $('#lti-logo').show();
+  } else {
+    $('#lti-logo').hide();
+  }
+  $('#description').html(json.d);
+  if (json.hide) {
+    $('#hidden').show();
+  } else {
+    $('#hidden').hide();
+  }
+  $('#edit-course').hide();
+  $('#view-course').show();
+}
+
+function editCourse() {
+  $('#name-inp').val(LAST_JSON.n);
+  $('#lang-code-dropdown').dropdown('set selected', LAST_JSON.lc);
+  $('#start-inp').val(LAST_JSON.sdi);
+  $('#end-inp').val(LAST_JSON.edi);
+  $('#signature-inp').val(LAST_JSON.sn);
+  $('#position-inp').val(LAST_JSON.sp);
+  QUILL.setContents([{ insert: '\n' }]);
+  QUILL.pasteHTML(LAST_JSON.d);
+  QUILL.setSelection(0, 0);
+  $('#edx-checkbox').checkbox(LAST_JSON.edx ? 'check' : 'uncheck');
+  $('#hide-checkbox').checkbox(LAST_JSON.hide ? 'check' : 'uncheck');
+  $('#view-course').hide();
+  $('#edit-course').show();
+}
+
+function updateInstructors(action, hex='') {
+  var obj = {a: action + ' instructor', h: '{{ course.hex }}', i: hex};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        var m = '<div class="item"><strong>Instructors:</strong></div>' +
+          '<div class="item"><i class="student icon"></i>{{ course.manager }}</div>';
+        var sq = "'";
+        for (var i in json.il) {
+          {% if course.owned %}
+          m += '<a class="item" onclick="updateInstructors(' + sq + 'remove' + sq + ', ' + sq +
+               json.il[i].hex + sq + ');">' + json.il[i].name +
+               '<div class="small ui icon"><i class="red remove icon"></i></div></a>';
+          {% else %}
+          m += '<div class="item">' + json.il[i].name + '</div>';
+          {% endif %}
+        }
+        $('#instructor-menu').html(m);
+        $('#instructor-dropdown').dropdown('clear');
+      }
+    }
+  });
+}
+
+function badgeColor() {
+  var c = COLOR_PICKER.color.rgb;
+  return ((SELECTED_DISC * 256 + c.r) * 256 + c.g) * 256 + c.b;
+}
+
+function updateBadgeImage() {
+  $('#sample-badge').attr('src', './badge/sample/' + badgeColor());
+}
+
+function selectDisc(n) {
+  $('#disc-' + SELECTED_DISC).removeClass('selected');
+  SELECTED_DISC = n;
+  $('#disc-' + SELECTED_DISC).addClass('selected');
+  updateBadgeImage();
+}
+
+function modifyBadge() {
+  BADGE_DISC = SELECTED_DISC;
+  BADGE_COLOR = badgeColor();
+  var obj = {a: 'modify badge', h: '{{ course.hex }}', bc: BADGE_COLOR};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      }
+    }
+  });
+}
+
+function getCourse(hex) {
+  var obj = {a: 'get course', h: '{{ course.hex }}'};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getCourseData(json);
+      }
+    }
+  });
+}
+
+function modifyCourse() {
+  var obj = {
+    a: 'modify course',
+    h: '{{ course.hex }}',
+    n: $('#name-inp').val().trim(),
+    d: QUILL.container.querySelector('.ql-editor').innerHTML,
+    lc: $('#lang-code-dropdown').dropdown('get value'),
+    sd: $('#start-inp').val(),
+    ed: $('#end-inp').val(),
+    sn: $('#signature-inp').val().trim(),
+    sp: $('#position-inp').val().trim(),
+    edx: $('#edx-inp').is(':checked'),
+    hide: $('#hide-inp').is(':checked'),
+  };
+  
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        getCourseData(json);
+      }
+    }
+  });
+}
+
+function checkDateTime(id, tt) {
+  obj = {a: 'validate ' + tt, s: $('#'+id).val()};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#'+id).val(json.dt);
+      }
+    }
+  });
+}
+
+function checkUniqueness(hex) {
+  if (!hex) {
+    hex = $('#relay-dropdown').dropdown('get value');
+  }
+  if (!hex) return true;
+  var obj = {a: 'unique relay', h: '{{ course.hex }}', r: hex, s: $('#suffix').val()};
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        if (json.cnt > 0) {
+          $('#unique-msg').show();
+        } else {
+          $('#unique-msg').hide();
+        }
+      }
+    }
+  });
+}
+
+function copyKeyToClipboard(e, nr) {
+  e.stopPropagation();
+  var txt = $('#lti-key-' + nr).val();
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    $('#lti-label-' + nr).removeClass('black');
+    $('#lti-label-' + nr).addClass('orange');
+    setTimeout(function() {
+      $('#lti-label-' + nr).removeClass('orange');
+      $('#lti-label-' + nr).addClass('black');
+    }, 500);
+  } catch {
+    alert(txt);
+  }
+} 
+
+function showOverview(hex) {
+  window.location.href = './course-estafette/' + hex;
+}
+
+function deleteCourseRelay(e, hex, title) {
+  e.stopPropagation();
+  RELAY_TO_DELETE = hex;
+  $('#del-relay-title').html(title);
+  $('#delete-relay-modal').modal('show');
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+<h3 class="ui header">
+  <i class="university icon"></i>
+  <div class="content" style="width: 100%">
+    {{ course.object.code }} &mdash; <span id="name"></span>
+    <div id="lti-logo" style="display: inline-block; vertical-align: bottom"
+         data-tooltip="Course relays will be LTI providers">
+      <img class="ui right floated mini image"
+           src="{% static 'presto/images/ims-logo.png' %}">
+    </div>
+    <a href="./pq/{{ course.hex }}" class="ui mini right floated circular secondary icon button"
+       data-tooltip="Picture Queue">
+      <i class="image outline icon"></i>
+    </a>
+    <a class="ui mini right floated circular primary icon button"
+       data-tooltip="Badge design" onclick="$('#badge-design-modal').modal('show');">
+      <i class="shield alternate icon"></i>
+    </a>
+  </div>
+</h3>
+
+<div id="instructor-menu" class="ui compact stackable secondary menu" style="margin-left: -1em">
+  {# menu is filled by updateInstructors(...) #}
+</div>
+
+{% if course.owned %}
+  <div id="instructor-dropdown" class="ui selection dropdown">
+    <input name="instructor-inp" type="hidden">
+    <i class="dropdown icon"></i>
+    <div class="default text">(add instructor)</div>
+    <div class="menu">
+    {% for s in staff %}
+      <div class="item" data-value="{{ s.hex }}">{{ s.name }}</div>
+    {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+<div id="view-course" class="ui segments" style="display: none">
+  <div class="ui black secondary segment">
+    <span class="nbs"><strong>Starts:</strong> <span id="starts"></span></span>
+    <span class="nbs"><strong>Ends:</strong> <span id="ends"></span></span>
+    <button class="ui mini right floated primary labeled icon button"
+            style="margin-top: -0.3em" onclick="editCourse()">
+      <i class="edit icon"></i>
+      Edit
+    </button>
+  </div>
+  <div class="ui segment">
+    <span class="nbs"><strong>Course manager:</strong> <span id="manager"></span></span>
+    <span class="nbs"><strong>Formal signature:</strong> <span id="signature"></span></span>
+    <span class="nbs"><strong>Position:</strong> <span id="position"></span></span>
+  </div>
+  <div id="description"class="ui segment">
+    {{ course.object.description|safe }}
+  </div>
+  <div id="hidden" class="ui secondary segment">
+    <em>This course is hidden.</em>
+  </div>
+</div>
+
+<div id="edit-course" class="ui blue segment" style="display: none">
+  <form id="edit-course-form" class="ui form">
+    <div class="four fields">
+      <div class="seven wide field">
+        <label>Course name:</label>
+        <input id="name-inp" type="text">
+      </div>
+      <div class="three wide field">
+        <label>Language:</label>
+        <div id="lang-code-dropdown" class="ui compact selection dropdown">
+          <input name="lang-code-inp" type="hidden">
+          <i class="dropdown icon"></i>
+          <div class="default text">Code</div>
+          <div class="menu">
+          {% for lc in lang_codes %}
+            <div class="item" data-value="{{ lc }}">{{ lc }}</div>
+          {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="ui three wide field">
+        <label>Start date:</label>
+        <input id="start-inp" type="text" placeholder="e.g., 14-2-2020"
+               onblur="checkDateTime('start-inp', 'date');">
+      </div>
+      <div class="ui three wide field">
+        <label>End date:</label>
+        <input id="end-inp" placeholder="e.g., 28-8-2020"
+               onblur="checkDateTime('end-inp', 'date');">
+      </div>
+    </div>
+    <label><strong>Course description:</strong></label>
+    <div id="quill-container" margin-top: 0.2em; margin-bottom: 0.5em">
+      <div id="quill-editor" style="height: 10em"></div>
+    </div>
+    <div class="ui two fields">
+      <div class="ui six wide field">
+        <label>Responsible academic staff:</label>
+        <input id="signature-inp" type="text">
+      </div>
+      <div class="ui ten wide field">
+        <label>Position:</label>
+        <input id="position-inp" type="text">
+      </div>
+    </div>
+    <div class="ui two fields">
+      <div class="ui six wide inline field"> {# six wide to align nicely with fields above #}
+        <div id="edx-checkbox" class="ui checkbox">
+          <input id="edx-inp" tabindex="0" class="hidden" type="checkbox">
+          <label>Is LTI provider</label>
+        </div>
+      </div>
+      <div class="ui inline field">
+        <div id="hide-checkbox" class="ui checkbox">
+          <input id="hide-inp" tabindex="0" class="hidden" type="checkbox">
+          <label>Is hidden (no enrollment)</label>
+        </div>
+      </div>
+    </div>
+    <div class="ui basic segment" style="margin-left: -1em; margin-bottom: -1em">
+      <div class="ui tiny primary icon button" onclick="modifyCourse();">
+        <i class="check icon"></i>
+        Modify
+      </div>
+      <div class="ui tiny icon button" onclick="getCourse();">
+        <i class="cancel icon"></i>
+        Cancel
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="ui black segment">
+  <div class="ui small header">
+    {% if not course.estafettes %}No{% else %}{{ course.estafettes|length }}{% endif %}
+    project relay{% if course.estafettes|length != 1 %}s{% endif %}
+    for this course
+  </div>
+  {% if course.estafettes %}
+  <div class="ui fluid vertical menu">
+  {% for ce in course.estafettes %}
+    <a class="item" onclick="showOverview('{{ ce.hex }}');">
+      <h3 class="ui header">
+        <div class="ui {{ ce.next_deadline.color }} horizontal label" style="margin-left: 0"
+             data-tooltip="{{ ce.participant_count }}
+             participant{% if ce.participant_count == 1%}{% else %}s{%endif%}
+             of which {{ ce.active_count }} active in the past 24 hours"
+             data-position="top left">
+          {{ ce.active_count }}/{{ ce.participant_count }}
+        </div>
+        {{ ce.object.title|safe }}
+        {% if ce.object.is_hidden %}
+          <div class="ui small horizontal label" style="padding-right: 0px"
+               data-tooltip="Invisible to students">
+            <i class="hide icon"></i>
+          </div>
+        {% endif %}
+        {% if ce.object.is_archived %}
+          <div class="ui small horizontal label" style="padding-right: 0px"
+               data-tooltip="Uploads have been archived">
+            <i class="archive icon"></i>
+          </div>
+        {% endif %}
+        {% if ce.demo_code %}
+          <span style="font-weight: normal; font-size: small; margin-left: 2em">
+            (<em>code:</em> {{ ce.demo_code }})
+          </span>
+        {% endif %}
+        {% if ce.consumer_secret %}
+          <span style="font-weight: normal; font-size: small; margin-left: 2em">
+            <div id="lti-label-{{ forloop.counter }}" class="ui black horizontal image label"
+                 data-tooltip="Click to copy LTI key to clipboard"
+                 onclick="copyKeyToClipboard(event, {{ forloop.counter }});">
+              <img src="{% static 'presto/images/ims-logo.png' %}"
+                   style="width: 16px !important; height: 16px !important; margin-top: -2px">
+                LTI
+            </div>
+            <input id="lti-key-{{ forloop.counter }}" type="text"
+                   style="height: 0; width: 0; border: none"
+                   value="{{ ce.consumer_secret.0 }}:{{ ce.consumer_secret.1 }}">
+          </span>
+        {% endif %}
+        <div class="ui right floated mini basic red icon button"
+             onclick="deleteCourseRelay(event, '{{ ce.hex }}', '{{ ce.object.title|safe }}');">
+          <i class="trash icon"></i>
+          Delete
+        </div>
+        <div class="sub header">
+          <small>
+            <span class="nbs"><em>Start time:</em> {{ ce.start_time }}</span>
+            <span class="nbs"><em>End time:</em> {{ ce.end_time }}</span>
+            <span class="nbs"><em>{{ ce.next_deadline.label }}:</em> {{ ce.next_deadline.time }}</span>
+          </small>
+        </div>
+      </h3>
+    </a>
+  {% endfor %}
+  </div>
+  {% endif %}
+  {% if not estafettes %}
+  <div class="ui inverted segment">
+    There are no published project relays that you can add to this course.
+  </div>
+  {% else %}
+  <div class="ui basic clearing segment" style="padding: 0">
+    <a id="add-estafette-button" class="ui small primary icon button">
+      <i class="plus icon"></i>
+      Add relay
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<div id="add-relay-modal" class="ui modal">
+  <div class="header">
+    Add project relay
+  </div>
+  <div class="content">
+    <div id="unique-msg">
+      NOTE: If you want to have multiple instances of the same relay, you must specify a suffix
+      so that these instances can be uniquely identified.
+    </div>
+    <form id="add-estafette-form" class="ui form" action="course/{{ course.hex }}" method="post">
+      <div class="two fields">
+        <div class="inline field">
+          <label>Project relay:</label>
+          <div id="relay-dropdown" class="ui selection dropdown">
+            <input name="relay" type="hidden">
+            <i class="dropdown icon"></i>
+            <div class="default text">Relay to add</div>
+            <div class="menu">
+            {% for e in estafettes %}
+              <div class="item" data-value="{{ e.hex }}">{{ e.name }}</div>
+            {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="inline field">
+          <label>Suffix:</label>
+          <input id="suffix" name="suffix" placeholder="(optional)" type="text"
+                 size="8" maxlength="8" onchange="checkUniqueness(false);">
+        </div>
+      </div>
+      <div class="two fields">
+        <div class="inline field">
+          <label># final reviews:</label>
+          <input name="reviews" placeholder="0-3" size="2" type="text">
+        </div>
+        <div class="inline field">
+          <label>Questionnaire:</label>
+          <div class="ui selection dropdown">
+            <input name="questionnaire" type="hidden">
+            <i class="dropdown icon"></i>
+            <div class="default text">Questionnaire</div>
+            <div class="menu">
+            {% for q in questionnaires %}
+              <div class="item" data-value="{{ q.hex }}">{{ q.name }}</div>
+            {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="four fields">
+        <div class="field">
+          <label>Relay opens:</label>
+          <input id="s-time" name="starts" placeholder="e.g., 14-2-2020 14:15"
+                 onblur="checkDateTime('s-time', 'datetime');">
+        </div>
+        <div class="field">
+          <label>Last step due:</label>
+          <input id="d-time" name="deadline" placeholder="e.g., 14-2-2020 14:15"
+                 onblur="checkDateTime('d-time', 'datetime');">
+        </div>
+        <div class="field">
+          <label>Final reviews due:</label>
+          <input id="r-time" name="revsdue" placeholder="e.g., 14-2-2020 14:15"
+                 onblur="checkDateTime('r-time', 'datetime');">
+        </div>
+        <div class="field">
+          <label>Relay closes:</label>
+          <input id="e-time" name="ends" placeholder="e.g., 14-2-2020 14:15"
+                 onblur="checkDateTime('e-time', 'datetime');">
+        </div>
+      </div>
+      <div id="time-warning" style="color: rgb(220, 0, 0); margin-top: -1em; margin-bottom: -1em">
+        The times above <strong>must</strong> be sequential.
+      </div>
+    </form>
+  </div>
+  <div class="actions">
+    <div class="ui small blue approve labeled icon button">
+      Create relay
+      <i class="check icon"></i>
+    </div>
+    <div class="ui small cancel labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="delete-relay-modal" class="ui small modal">
+  <div class="header">
+    Really delete this relay?
+  </div>
+  <div class="content">
+    <p>
+      You are about to delete course relay
+      <span id="del-relay-title" style="font-style: italic"></span>.
+    </p>
+    <em>This action cannot be undone!</em>
+  </div>
+  <div class="actions">
+    <div class="ui small cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui small red approve right labeled icon button">
+      Delete
+      <i class="trash icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="badge-design-modal" class="ui modal">
+  <div class="header">
+    Badge design
+  </div>
+  <div class="content">
+    <p>
+      Project relay badges all have the same design, but you can customize them for your course
+      by choosing a particular metallic disc and the color for the print.
+    </p>
+    <p>
+      <em>NOTE: You can modify the design until the first badge has been issued.</em>
+    </p>
+    <div class="ui stackable grid">
+      <div id="disc-picker" class="seven wide column">
+        <h3 class="ui small header">Disc options:</h3>
+        <div class="ui mini images">
+          <img id="disc-0" class="ui image" src="{% static 'presto/images/disc-brass.png' %}"
+               style="cursor: pointer" onclick="selectDisc(0)" title="Brass">
+          <img id="disc-2" class="ui image" src="{% static 'presto/images/disc-bronze.png' %}"
+               style="cursor: pointer" onclick="selectDisc(2)" title="Bronze">
+          <img id="disc-4" class="ui image" src="{% static 'presto/images/disc-copper.png' %}"
+               style="cursor: pointer" onclick="selectDisc(4)" title="Copper">
+          <img id="disc-6" class="ui image" src="{% static 'presto/images/disc-gold.png' %}"
+               style="cursor: pointer" onclick="selectDisc(6)" title="Gold">
+          <img id="disc-8" class="ui image" src="{% static 'presto/images/disc-silver.png' %}"
+               style="cursor: pointer" onclick="selectDisc(8)" title="Silver">
+          <img id="disc-10" class="ui image" src="{% static 'presto/images/disc-steel.png' %}"
+               style="cursor: pointer" onclick="selectDisc(10)" title="Steel">
+        </div>
+        <div class="ui mini images">
+          <img id="disc-1" class="ui image" src="{% static 'presto/images/disc-brass-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(1)" title="Brass (dark)">
+          <img id="disc-3" class="ui image" src="{% static 'presto/images/disc-bronze-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(3)" title="Bronze (dark)">
+          <img id="disc-5" class="ui image" src="{% static 'presto/images/disc-copper-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(5)" title="Copper (dark)">
+          <img id="disc-7" class="ui image" src="{% static 'presto/images/disc-gold-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(7)" title="Gold (dark)">
+          <img id="disc-9" class="ui image" src="{% static 'presto/images/disc-silver-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(9)" title="Silver (dark)">
+          <img id="disc-11" class="ui image" src="{% static 'presto/images/disc-steel-dark.png' %}"
+               style="cursor: pointer" onclick="selectDisc(11)" title="Steel (dark)">
+        </div>
+      </div>
+      <div id="color-picker-container" class="four wide column" style="margin: auto">
+        
+      </div>
+      <div class="four wide column">
+        <img id="sample-badge" class="ui medium circular image"
+             style="max-width: 160px; max-height: 160px"
+             src="./badge/sample/0">
+      </div>
+    </div>
+  </div>
+  <div class="actions">
+    <div class="ui small cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui small blue approve right labeled icon button">
+      Update
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
+{% endblock page_content %}

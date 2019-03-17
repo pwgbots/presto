@@ -1,0 +1,70 @@
+{% extends "student.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load presto_filters %}
+{% block component_inits %}
+
+$('#enroll-button').click(function(event) {
+  event.preventDefault();  // important!
+  obj = {'a': 'enroll', 'h': '{{ course.hex }}'}
+  $.post('./ajax', obj, function(response, status, xhr) {
+    if ( status == 'error' ) {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      window.location.replace('./student');
+    }
+  });
+});
+
+$('#cancel-button').click(function() {
+  window.location.replace('./student');
+});
+
+{% endblock component_inits %}
+
+{% block page_content %}
+{% if enroll %}
+<div class="ui header">
+  <i class="checkmark box icon"></i>
+  <div class="content">
+    {{ lang|phrase:'Enroll_in_course' }}
+  </div>
+</div>
+<div class="ui raised segment" id="enroll-segment">
+  <div class="ui small header">{{ enroll|safe }}</div>
+  {{ course.object.description|safe }}
+  <a class="ui small primary button" href="student/enroll/{{ course.hex }}">
+    {{ lang|phrase:'Enroll' }}
+  </a>
+  <a class="ui small button" id="cancel-button">
+    {{ lang|phrase:'Cancel' }}
+  </a>
+</div>
+{% endif %}
+{% endblock page_content %}

@@ -1,0 +1,166 @@
+{% extends "instructor.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+
+{% block javascripts %}
+function displayPicture(hex) {
+  var w = window.open('', 'pq_display_window', 'width=600,height=400,menubar=no');
+  w.document.open();
+  w.document.write('<html><head><title>Images can be mailed to:&nbsp; {{ pq_mail }}</title></head>' +
+    '<body style="background-color: black"><img src="./pq/get/' + hex + '"></body></html>');
+  w.document.close();
+}
+
+function rotatePicture(nr, hex, deg) {
+  obj = {a: 'rotate picture', h: hex, d: deg};
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        $('#qp-' + nr).attr('src', './pq/get/' + json.hex);
+      }
+    }
+  });
+}
+
+function toggleSetting(param) {
+  obj = {a: 'toggle pq', h: '{{ course.hex }}', p: param};
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        if (param == 'open') {
+          if (json.p) {
+            $('#pq-open-btn').addClass('basic');
+            $('#pq-open-text').text('Open');
+            $('#pq-open-icon').removeClass('lock');
+            $('#pq-open-icon').addClass('unlock');
+          } else {
+            $('#pq-open-btn').removeClass('basic');
+            $('#pq-open-text').text('Closed');
+            $('#pq-open-icon').removeClass('unlock');
+            $('#pq-open-icon').addClass('lock');
+          }
+        } else if (param == 'strict') {
+          if (json.p) {
+            $('#pq-strict-btn').removeClass('basic');
+            $('#pq-strict-text').text('Restricted to students');
+            $('#pq-strict-icon').addClass('outline');
+          } else {
+            $('#pq-strict-btn').addClass('basic');
+            $('#pq-strict-text').text('Anyone can post');
+            $('#pq-strict-icon').removeClass('outline');
+          }
+        }
+      }
+    }
+  });
+}
+
+
+
+{% endblock javascripts %}
+
+{% block page_content %}
+<h3 class="ui header">
+  <i class="image outline icon"></i>
+  <div class="content">
+    Picture queue for <a href="./course/{{ course.hex }}">{{ course.object.title|safe }}</a>
+  </div>
+</h3>
+<h4 class="ui header">
+  <i class="mail outline icon"></i>
+  <div class="content">
+    Mailbox:
+    <span style="font-family: monospace; font-weight: normal; font-size: larger;
+                 margin-left: 1em; margin-right: 1em">
+      {{ pq_mail }}
+    </span>
+    <a href="./pq/{{ course.hex }}" class="ui mini button">
+      <i class="refresh icon"></i>
+        Refresh
+    </a>
+    <div id="pq-open-btn"
+         class="ui {% if course.object.picture_queue_open %}basic {% endif %}blue mini button"
+         style="margin-left: 3em" onclick="toggleSetting('open');">
+      <i id="pq-open-icon"
+         class="{% if course.object.picture_queue_open %}unlock{% else %}lock{% endif %} icon"></i>
+      <span id="pq-open-text">
+        {% if course.object.picture_queue_open %}Open{% else %}Closed{% endif %}
+      </span>
+    </div>
+    <div id="pq-strict-btn"
+         class="ui {% if not course.object.picture_queue_strict %}basic {% endif %}black mini button"
+         onclick="toggleSetting('strict');">
+      <i id="pq-strict-icon"
+         class="{% if course.object.picture_queue_strict %}user{% else %}user outline{% endif %} icon"></i>
+      <span id="pq-strict-text">
+        {% if course.object.picture_queue_strict %}Restricted to students{% else %}Anyone can post{% endif %}
+      </span>
+    </div>
+  </div>
+</h4>
+<div class="ui grid">
+{% for p in pictures %}
+  <div class="five wide column">
+    <div class="ui segment" style="min-width: 150px">
+      <div class="ui blue ribbon label">{{ p.time_received }}</div>
+      <span>{{ p.sender }}</span>
+      <div class="ui medium image" onclick="displayPicture('{{ p.hex }}');">
+        <img id="qp-{{ forloop.counter }}" src="./pq/get/{{ p.hex }}"
+             style="margin-top: 0.5em; margin-bottom: 0.5em">
+      </div>
+      <div style="margin-bottom: -0.5em">
+        <div class="ui mini circular icon button"
+             onclick="rotatePicture({{ forloop.counter }}, '{{ p.hex }}', 90);">
+          <i class="undo icon"></i>
+        </div>
+        <div class="ui mini circular icon button"
+             onclick="rotatePicture({{ forloop.counter }}, '{{ p.hex }}', -90);">
+          <i class="repeat icon"></i>
+        </div>
+        <a class="ui right floated red mini circular icon button" href="./pq/delete/{{ p.hex }}">
+          <i class="remove icon"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+{% endblock page_content %}

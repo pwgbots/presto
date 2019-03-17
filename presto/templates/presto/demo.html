@@ -1,0 +1,116 @@
+{% extends "presto/base.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% block user_role %}
+<div class="ui right floated primary icon button">
+  <i class="ban icon"></i>
+</div>
+{% endblock user_role %}
+{% block user_menu %}{% endblock user_menu %}
+{% block page_content %}
+  {% if pin %}
+    <div class="ui orange inverted segment">
+      <div class="ui large header">
+        <i class="user circle icon"></i>
+        <div class="content">Your name/alias will be {{ alias }}</div>
+      </div>
+      <p>Your participant indentification number (PIN) is: <strong><big>{{ pin }}</big></strong></p>
+      <p style="padding-bottom: 2.5em">Please write this down somewhere, as you will need it to sign on again!</p>
+      <a class="ui left floated black labeled icon button" style="margin-right: 1em; margin-top:-2em"
+         href="student">
+        <i class="arrow circle right icon"></i>
+        OK, I got it!
+      </a>
+    </div>
+  {% elif estafette %}
+    <div class="ui blue inverted segment">
+      <div class="ui large header">
+        <i class="checkered flag icon"></i>
+        <div class="content">
+          {{ estafette|safe }}
+        </div>
+      </div>
+      <p>Please enter your participant identification number.</p>
+      <form id="alias-form" class="ui form" method="post" action="demo-login">
+        <input name="hex" type="hidden" value="{{ de_hex }}{{ ds_hex }}">
+        <div class="inline field">
+          <label>PIN:</label>
+          <input type="text" id="pin" name="pin" maxlength="4" placeholder="e.g., 0123">
+        </div>
+        <em>No PIN? Please check with the Presto demonstrator, or cancel to sign in with a different alias.</em>
+        <div class="ui basic segment">
+          <button class="ui secondary labeled icon button" type="submit" style="margin-left: -1em">
+            <i class="check circle outline icon"></i>
+            Confirm
+          </button>
+          <a href="demo"><div class="ui labeled icon button" style="margin-left: 2em">
+            <i class="cancel icon"></i>
+            Cancel
+          </div></a>
+        </div>
+      </form>
+    </div>
+    {% else %}
+    <div class="ui blue inverted segment">
+      <div class="ui large header">
+        <i class="smile icon"></i>
+        <div class="content">
+          Welcome to Presto!
+        </div>
+      </div>
+      <p>To participate in a demonstration relay, please enter a valid five-character
+        demonstration code below, and your name (or alias).
+      </p>
+      <form id="alias-form" class="ui form" method="post" action="demo-login">
+        <div class="inline field">
+          <label>Code:&nbsp;</label>
+          <input type="text" id="code" name="code" maxlength="16" placeholder="e.g., AB012">
+        </div>
+        <div class="inline field">
+          <label>Name:</label>
+          <input type="text" id="alias-name" name="alias" maxlength="16" placeholder="Your name (or alias)">
+        </div>
+        <p>
+          An alias must start with a letter, and be 6 to 15 characters long.
+          It may contain letters, digits, periods, hyphens, apostrophes, and single spaces.
+        </p>
+        <p>
+          <em>Please note that names/aliases will appear in the instructor overview.</em>
+        </p>
+        <div class="ui basic segment" style="margin-bottom: -1em">
+          <button class="ui secondary labeled icon button" type="submit" style="margin-left: -1em">
+            <i class="sign in icon"></i>
+            Sign in
+          </button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+  </div>
+{% endblock page_content %}

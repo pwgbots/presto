@@ -1,0 +1,1093 @@
+{% extends "base-with-menus.html" %}
+
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2019 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% load presto_filters %}
+
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/modal.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dimmer.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/dimmer.js' %}"></script>
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
+{% endblock headlines %}
+
+{% block component_inits %}
+  $('.ui.rating').rating('disable');
+
+  {% for ap in decisions %}
+    {% for ri in ap.rev_items %}
+      $('#appeal-{{ ap.nr }}-itap-{{ ri.item.number }}').html(
+          itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+    {% endfor %}
+  {% endfor %}
+  
+  {% for s in steps %}
+    {% for r in s.pred_reviews %}
+      {% for ri in r.rev_items %}
+        $('#pr-{{ s.step_nr }}-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}').html(
+            itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+      {% endfor %}
+    {% endfor %}
+    {% for r in s.succ_reviews %}
+      {% for ri in r.rev_items %}
+        $('#sr-{{ s.step_nr }}-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}').html(
+            itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+      {% endfor %}
+    {% endfor %}
+  {% endfor %}
+
+  {% for r in final_reviews %}
+    {% for ri in r.rev_items %}
+      $('#fr-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}').html(
+          itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
+    {% endfor %}
+  {% endfor %}
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+
+function toggleInfo(nr) {
+  $('#info-' + nr).toggle();
+}
+
+function showLargeImage() {
+  $('#progress-modal').modal('show')
+}
+
+function itemAppraisalAsHtml(rating, ap_str) {
+  var html = '', n = 0, ap = ap_str.split(':');
+  if (ap[0] == 'icons' || ap[0] == 'options') {
+    n = ap.length - 1;
+  } else {
+    n = parseInt(ap[1]);
+  }
+  rating = Math.min(n, rating);
+  console.log('n = ' + n + '; rating = ' + rating);
+  if (rating === 0) {
+    html = '<div class="ui horizontal basic grey circular label">?</div>'
+  } else if (ap[0] == 'rating') {
+    var e1 = (ap[2] == 'star' ? '&starf;' : '&heart;');
+    var e2 = (ap[2] == 'star' ? '&star;' : '&heart;');
+    if (n > 0) {
+      html = '<span style="color: black">' + e1.repeat(rating) + '</span>';
+    }
+    if (rating < n) {
+      html += '<span style="color: silver">' + e2.repeat(n - rating) + '</span>';
+    }
+  } else if (ap[0] == 'likert') {
+    html = '<div class="ui horizontal black label">' + rating + '</div>';
+  } else if (ap[0] == 'score') {
+    html = '<div class="ui horizontal black circular label">' + rating + '</div>';
+  } else if (ap[0] == 'icons') {
+    var ic = ap[rating].split('=');
+    html = '<div class="ui large horizontal ' + ic[1] +
+      ' icon label" style="min-width: 1em; padding: 0.4em 0.5em"><i class="' +
+      ic[0] + ' icon" style="margin-right: 0"></i></div>';
+  } else if (ap[0] == 'options') {
+    html = '<div class="ui horizontal black label">' + ap[rating] + '</div>';
+  }
+  return html;
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+
+  {% block history_header %}
+  <div class="ui medium header">
+    <i class="history icon"></i>
+    <div class="content">
+      {{ lang|phrase:'History_of' }}
+      {# NOTE: header shows student name when an instructor views a participant's history #}
+        {{ object.estafette.title|safe }}
+        {% if no_names %}
+          <span style="margin-left: 0.5em; font-weight: 500">#({{ object.student.id }})</span>
+        {% elif alias %}
+          <span style="margin-left: 0.5em; font-weight: 500">({{ alias }})</span>
+        {% elif object.student.dummy_index > 0 %}
+          <span style="margin-left: 0.5em; font-weight: 500">("dummy" # {{ object.student.dummy_index }})</span>
+        {% endif %}
+    </div>
+  </div>
+  {% endblock history_header %}
+
+<div class="ui segments">
+
+  {# NOTE: estafette properties are not shown when an instructor views a participant's history #}
+  {% block estafette_properties %}
+  <div class="ui segment">
+    <div class="ui grid">
+      <div class="eleven wide column">
+        <p>
+          {{ lang|phrase:'Runs_from' }}&nbsp; {{ start }}
+          &nbsp;{{ lang|phrase:'through' }}&nbsp; {{ end }}.
+        </p>
+        <div class="ui large {{ next_deadline.color }} ribbon label">
+          <em>{{ next_deadline.label }}:</em>
+          <span style="font-size: larger; text-shadow: 1px 0px black; margin-left: 1em">
+            {{ next_deadline.time }}
+          </span>
+        </div>
+
+    {# INTERMEZZO: progress bar #}
+    {% if things_to_do.0.assigned %}
+      <div class="ui basic segment" style="white-space: nowrap; padding: 0">
+        <div style="display: inline-block; background: rgb(235,235,235); white-space: nowrap; padding: 4px; border: 1px solid rgb(235,235,235); border-radius: 4px 0 0 4px; height: 2.2em">  
+          <div class="ui olive circular label" data-tooltip="{{ things_to_do.0.assigned_tip }}" data-inverted="">&#9654;</div>
+          {% for t in things_to_do %}
+            {% if t.step %}
+              {% if t.step > 1 and t.assigned %}
+                <a class="ui mini olive circular label" onclick="document.getElementById('rh-{{ t.step }}-assigned').scrollIntoView();" data-tooltip="{{ t.assigned_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+              {% endif %}
+              {% if t.downloaded %}
+                <a class="ui mini blue circular label" onclick="document.getElementById('rh-{{ t.step }}-downloaded').scrollIntoView();" data-tooltip="{{ t.downloaded_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+              {% endif %}
+              {% if t.reviewed %}
+                <a class="ui mini orange circular label" onclick="document.getElementById('rh-{{ t.step }}-reviewed').scrollIntoView();" data-tooltip="{{ t.reviewed_tip }}" data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+              {% endif %}
+              {% if t.uploaded %}
+                <a class="ui purple circular label" onclick="document.getElementById('rh-{{ t.step }}-uploaded').scrollIntoView();" data-tooltip="{{ t.uploaded_tip }}" data-inverted="">{{ t.step }}</a>
+              {% endif %}
+            {% elif t.review %}
+              {# final review #}
+              {% if t.downloaded %}
+                <a class="ui mini blue circular label" onclick="document.getElementById('rh-fr{{ t.review }}-downloaded').scrollIntoView();" data-tooltip="{{ t.downloaded_tip }} " data-inverted="" style="min-width: 10.34px; min-height: 10.34px"></a>
+              {% endif %}
+              {% if t.reviewed %}
+                <a class="ui orange circular label" onclick="document.getElementById('rh-fr{{ t.review }}-reviewed').scrollIntoView();" data-tooltip="{{ t.reviewed_tip }}" data-inverted="">&starf;</a>
+              {% endif %}
+            {% elif t.finish %}
+              <a class="ui big label" onclick="document.getElementById('rh-finish').scrollIntoView();" data-tooltip="Finish @ {{ t.finish }}" data-inverted="" style="padding: 0 !important; min-height: 15px">
+                <i class="checkered flag icon" style="margin-right: 0 !important"></i>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% with things_to_do|last as last_thing %}{% if not last_thing.finish %}
+        <div style="display: inline-block; white-space: nowrap; padding: 4px; margin-left:-2px; border: 1px solid rgb(235,235,235); border-radius: 0 4px 4px 0; height: 2.2em; margin-left: -4px">  
+          {% for t in things_to_do %}
+            {% if t.step %}
+              {% if t.step > 1 and not t.assigned %}
+                <div class="ui mini basic olive circular label" data-tooltip="{{ t.assigned_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if t.step > 1 and not t.downloaded %}
+                <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if t.step > 1 and not t.reviewed %}
+                <div class="ui mini basic orange circular label" data-tooltip="{{ t.reviewed_tip }}" style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if not t.uploaded %}
+                <div class="ui basic purple circular label" data-tooltip="{{ t.uploaded_tip }}">{{ t.step }}</div>
+              {% endif %}
+            {% elif t.review %}
+              {# final review #}
+              {% if not t.downloaded %}
+                <div class="ui mini basic blue circular label" data-tooltip="{{ t.downloaded_tip }} " style="min-width: 10px; min-height: 10px"></div>
+              {% endif %}
+              {% if not t.reviewed %}
+                <div class="ui basic orange circular label" data-tooltip="{{ t.reviewed_tip }}">&starf;</div>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}{% endwith %}
+      </div>
+    {% endif %}
+
+      </div> {# end of eleven wide column DIV #}
+      <div class="one wide column">
+        <div id="info-btn-{{ nr }}" class="ui tiny right floated blue circular icon button"
+             onclick="toggleInfo('{{ p.nr }}')">
+          <i class="info icon"></i>
+        </div>
+      </div>
+      <div class="four wide column">
+        {% if not no_names %}
+          <img class="ui medium image" src="progress/p/{{ hex }}" onclick="showLargeImage();" />
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div id="info-{{ p.nr }}" class="ui secondary segment" style="font-size: small; display: none">
+    {{ desc|safe }}
+  </div>
+  {% endblock estafette_properties %}
+  
+  {% if decisions %}
+    <div class="ui yellow inverted segment">
+      <div class="ui medium header" style="color: black">
+        <img class="ui mini image" src="{% static 'presto/images/referee.png' %}">
+        <div class="content">
+          {{ lang|phrase:'Your_referee_decisions'|safe }} (N = {{ decisions|length }})
+          <a class="ui large black right floated horizontal label"
+             onclick="$('#appeal-decisions').toggle();">
+            {{ lang|phrase:'Show_hide'|safe }}
+          </a>
+        </div>
+      </div>
+    </div>
+    <div id="appeal-decisions" style="padding: 1em; display: none">
+      {% for ap in decisions %}
+        <div class="ui segments" lang="{{ lang.code }}">
+          <div class="ui grey inverted segment">
+            <h4 class="ui header">
+              <i class="law icon"></i>
+              <div class="content">
+                {{ ap.appeal_title|safe }}
+              </div>
+            </h4>
+          </div>
+          <div class="ui segment">
+            <div class="ui segments">
+              <div class="ui secondary clearing segment">
+                {{ ap.case_title }}
+                <a class="ui mini circular icon button"
+                   onclick="$('#info-ap-case-{{ ap.nr }}').toggle();{% if ap.case_hex %} $('#ap-case-file-{{ ap.nr }}').toggle();{% endif %}">
+                  <i class="chevron down icon"></i>
+                </a>
+              </div>
+              {% if ap.case_hex %}
+                <div id="ap-case-file-{{ ap.nr }}" class="ui secondary segment" hidden="hidden">
+                  {{ lang|phrase:'Case_has_attachment' }}
+                  <a class="ui tiny black button" href="download/case/{{ ap.case_hex }}"
+                     style="margin-left: 2em">
+                    <i class="download icon"></i>
+                    {{ lang|phrase:'Download' }}
+                  </a>
+                </div>
+              {% endif %}
+              <div id="info-ap-case-{{ ap.nr }}" class="ui segment" hidden="hidden">
+                {{ ap.case_desc|safe }}
+              </div>
+            </div>
+            <div class="ui small header">
+              {{ ap.step_title }}
+            </div>
+            {{ ap.step_desc|safe }}
+            <div class="ui small compact stackable menu">
+              <div class="header item">
+                {{ lang|phrase:'Predecessor_work' }}:
+              </div>
+              {% for f in ap.pred_file_list %}
+                <a class="item" href="download/ref/{{ f.name }}/{{ ap.pred_hex }}" target="_blank">
+                  {{ f.prompt }}
+                </a>
+              {% endfor %}
+              {% if ap.pred_file_list|length > 1 %}
+                <a class="item" href="download/ref/all-zipped/{{ ap.pred_hex }}" target="_blank">
+                  <i class="file archive outline icon"></i>
+                  {{ lang|phrase:'Download_all' }}
+                </a>
+              {% endif %}
+            </div>
+            <div class="ui orange secondary segment">
+              <div class="ui small header">
+                <i class="empty star icon"></i>
+                <div class="content"{% if ap.show_names %} data-tooltip="{{ ap.reviewer }}"{% endif %}>
+                  {{ lang|phrase:'Successor_review' }}
+                </div>
+              </div>
+              {% if ap.rev_items|length > 0 %}
+                <p><strong><em>{{ lang|phrase:'Specific_review_items' }}</em></strong></p>
+                {% for ri in ap.rev_items %}
+                  <div>
+                    <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                    <div id="appeal-{{ ap.nr }}-itap-{{ ri.item.number }}"
+                         style="display: inline-block; margin-left: 1em">
+                    </div>
+                  </div>
+                  <div style="font-size: small">
+                    {{ ri.item.instruction|safe }}
+                  </div>
+                  {{ ri.comment|safe }}
+                {% endfor %}
+                <p><strong><em>{{ lang|phrase:'Overall_review' }}</em></strong></p>
+              {% endif %}
+              {{ ap.review.grade_motivation|safe }}
+              <label><strong>{{ lang|phrase:'Review_rating' }}:</strong></label>
+              <div id="appeal-rev-rat-{{ ap.nr }}" class="ui star rating"
+                   data-rating="{{ ap.review.grade }}" data-max-rating="5">
+              </div>
+              {% if ap.review.is_rejection %}
+                <div class="ui raised segment">
+                  <div class="ui small header">
+                    <i class="thumbs down icon"></i>
+                    <div class="content">
+                      {{ lang|phrase:'Successor_rejected' }}
+                    </div>
+                  </div>
+                </div>
+              {% endif %} 
+            </div>
+            <div class="ui violet secondary segment">
+              <div class="ui small header">
+                <i class="pointing up icon"></i>
+                <div class="content"{% if ap.show_names %} data-tooltip="{{ ap.author }}"{% endif %}>
+                  {{ lang|phrase:'Predecessor_appealed_on' }} {{ ap.time_appealed }}
+                </div>
+              </div>
+              {{ ap.review.appraisal_comment|safe }}
+              {% if ap.review.improvement_appraisal %}
+                <div class="ui small header">
+                  {{ ap.imp_opinion|safe }}
+                </div>
+                {{ ap.review.improvement_appraisal_comment|safe }}
+              {% elif not ap.is_rejection %}
+                <p>
+                  {{ lang|phrase:'No_pred_comment' }}
+                </p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="ui grey segment">
+            <div class="ui small header">
+              {{ lang|phrase:'Your_consideration' }}
+            </div>
+            <div class="ui grey secondary segment">
+              {{ ap.appeal.grade_motivation|safe }}
+            </div>
+            <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+              <label><strong>{{ lang|phrase:'Your_rating_of_pred_work' }}:</strong></label>
+              <div id="dec-rat-{{ ap.nr }}" class="ui star rating disabled"
+                   data-rating="{{ ap.appeal.grade }}" data-max-rating="5"></div>
+            </div>
+            <div style="margin-bottom: 0.5em">
+              {{ ap.penalties_as_text|safe }}
+            </div>
+            {% if ap.time_pred_appr %}
+              <div class="ui {{ ap.pred_appr_color }} secondary segment">
+                <strong>{{ lang|phrase:'Pred_dec_appraisal' }}</strong>:
+                <i class="{{ ap.pred_appr_icon }} icon"></i>
+                &nbsp;&nbsp;<small><em>({{ ap.time_pred_appr }})</em></small>
+                {{ ap.pred_motiv|safe }}
+              </div>
+            {% endif %}
+            {% if ap.time_succ_appr %}
+              <div class="ui {{ ap.succ_appr_color }} secondary segment">
+                <strong>{{ lang|phrase:'Succ_dec_appraisal' }}</strong>:
+                <i class="{{ ap.succ_appr_icon }} icon"></i>
+                &nbsp;&nbsp;<small><em>({{ ap.time_succ_appr }})</em></small>
+                {{ ap.succ_motiv|safe }}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}  
+    </div>
+  {% endif %}
+  
+  
+  {% if object.progress == 0 %}
+    <div class="ui blue inverted segment">
+      {{ lang|phrase:'Never_started' }}
+    </div>
+  {% endif %}
+  <div class="ui tertiary segment">
+    {{ lang|phrase:'Your_last_action' }} {{ last_action }}
+  </div>
+  {% for s in steps %}
+    <div class="ui blue inverted segment">
+      <div class="ui small header">
+        <i class="flag outline icon"></i>
+        <div class="content">
+          {{ s.header|safe }}
+        </div>
+      </div>
+    </div>
+    <div class="ui segment">
+      <div class="ui top attached secondary segment">
+        {{ s.case_title }}
+      </div>
+      <div class="ui {% if not s.case_hex %}bottom {% endif %}attached segment">
+        {{ s.case|safe }}
+      </div>
+      {% if s.case_hex %}
+        <div class="ui bottom attached secondary segment">
+          <em><strong>{{ lang|phrase:'Case_has_attachment' }}</strong></em>
+          <a class="ui mini black button" href="download/case/{{ s.case_hex }}"
+             style="margin-left: 2em">
+            <i class="download icon"></i>
+            {{ lang|phrase:'Download' }}
+          </a>
+        </div>
+      {% endif %}
+      <div id="rh-{{ s.step_nr }}-assigned" class="ui olive segment">
+        <p style="font-size: small; font-style: italic">
+          {{ s.Assigned_to_you }}
+          {% if identify and s.assignment.predecessor %}
+            &larr;
+            {% if no_names %}
+              #({{ s.assignment.predecessor.participant.student.id }})
+            {% else %}
+              {{ s.assignment.predecessor.participant.student.dummy_name }}
+            {% endif %}
+          {% endif %}
+        </p>
+        <div class="ui small header">
+          {{ lang|phrase:'Your_task' }}
+        </div>
+        {{ s.desc|safe }}
+      </div>
+      {# NOTE: remedy that if participant has not saved review, downloads do not show #}
+      {% if not s.pred_reviews %}
+        {% if s.downloaded %}
+          <div id="rh-{{ s.step_nr }}-downloaded" class="ui blue segment">
+            <p style="font-size: small; font-style: italic">
+              {{ lang|phrase:'You_downloaded_on' }} {{s.downloaded }}
+            </p>
+            <div class="ui tiny blue inverted compact stackable menu">
+              {% if object.estafette.is_archived %}  
+                <div class="item">
+                  {{ lang|phrase:'Archived' }}
+                </div>
+              {% else %}
+                <div class="header item">
+                  {{ lang|phrase:'View_pred_work' }}:
+                </div>
+                {% for f in s.pred_file_list %}
+                  <a class="item" href="download/{{ f.name }}/{{ s.pred_hex }}" target="_blank">
+                    {{ f.prompt }}
+                  </a>
+                {% endfor %}
+                {% if s.pred_file_list|length > 1 %}
+                  <a class="item" href="download/all-zipped/{{ s.pred_hex }}" target="_blank">
+                    <i class="file archive outline icon"></i>
+                    {{ lang|phrase:'Download_all' }}
+                  </a>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {# NOTE: due to rejections, a participant may have given several reviews #}
+      {% for r in s.pred_reviews %}
+        {# NOTE: only the last review segment must have the ID referenced to by the progress bar #}
+        <div{% if forloop.last %} id="rh-{{ s.step_nr }}-downloaded"{% endif %}
+             class="ui blue segment">
+          {# NOTE: rejected assignments may relate to different case, so allow viewing it #}
+          {% if r.object.is_rejection %}
+            {% if r.object.assignment.case != s.assignment.case %}
+              <div class="ui top attached inverted blue segment">
+                <div class="ui small header">
+                  <i class="thumbs down icon"></i>
+                  <div class="content">
+                    {{ lang|phrase:'Case' }} {{ r.object.assignment.case.letter }}.
+                    {{ r.object.assignment.case.name|safe }}
+                  </div>
+                </div>
+              </div>
+              <div class="ui bottom attached segment" style="font-size: small">
+                {{ r.object.assignment.case.description|safe }}
+              </div>
+            {% endif %}
+            <p style="font-weight: bold">
+              {{ lang|phrase:'You_rejected' }}.
+            </p>
+          {% endif %}
+          <p style="font-size: small; font-style: italic">
+            {{ lang|phrase:'You_downloaded_on' }} {{r.time_first_download }}
+          </p>
+        </div>
+        <div{% if forloop.last %} id="rh-{{ s.step_nr }}-reviewed"{% endif %}
+             class="ui orange segment">
+          <p style="font-size: small; font-style: italic">
+            {{ lang|phrase:'You_reviewed_on' }} {{r.time_submitted }}
+          </p>
+          <div class="ui tiny orange inverted compact stackable menu">
+            {% if object.estafette.is_archived %}  
+              <div class="item">
+                {{ lang|phrase:'Archived' }}
+              </div>
+            {% else %}
+              <div class="header item">
+                {{ lang|phrase:'View_pred_work' }}:
+              </div>
+              {% for f in s.pred_file_list %}
+                <a class="item" href="download/{{ f.name }}/{{ r.pred_hex }}" target="_blank">
+                  {{ f.prompt }}
+                </a>
+              {% endfor %}
+              {% if s.pred_file_list|length > 1 %}
+                <a class="item" href="download/all-zipped/{{ r.pred_hex }}" target="_blank">
+                  <i class="file archive outline icon"></i>
+                  {{ lang|phrase:'Download_all' }}
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
+          <div class="ui small header">
+            {{ lang|phrase:'Your_review' }}
+            {% if r.object.assignment.is_selfie %}
+              <span style="font-weight:500">({{ lang|phrase:'Self_review' }})</span>
+            {% elif identify %}
+              <span style="font-weight:500">&rarr;
+                {% if no_names %}
+                  #({{ r.object.assignment.participant.student.id }})
+                {% else %}
+                  {{ r.object.assignment.participant.student.dummy_name }}
+                {% endif %}
+              </span>
+            {% endif %}
+          </div>
+          {% if r.rev_items|length > 0 %}
+            <p><strong><em>{{ lang|phrase:'Specific_review_items' }}</em></strong></p>
+            {% for ri in r.rev_items %}
+              <div>
+                <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                <div id="pr-{{ s.step_nr }}-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}"
+                     style="display: inline-block; margin-left: 1em">
+                </div>
+              </div>
+              {{ ri.comment|safe }}
+            {% endfor %}
+            <p><strong><em>{{ lang|phrase:'Overall_review' }}</em></strong></p>
+          {% endif %}
+          {{ r.object.grade_motivation|safe }}
+          <label><strong>{{ lang|phrase:'Your_rating' }}:</strong></label>
+          <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+          {% if r.object.is_rejection %}
+            <div class="ui raised segment">
+              <div class="ui small header">
+                <i class="thumbs down icon"></i>
+                <div class="content">
+                  {{ lang|phrase:'You_rejected' }}
+                </div>
+              </div>
+            </div>
+          {% endif %} 
+          {%  if r.time_appraised %}
+          {# NOTE: to better protect anonymity, this time is only shown to instructors #}
+            <div class="ui secondary segment">
+              <div class="ui small header">
+                <i class="{{ r.app_icon }} icon"></i>
+                <div class="content">
+                  {{ r.app_header }}
+                  {% if identify %}
+                    <span style="font-weight:500">({{ r.time_appraised }})</span>
+                  {% endif %}
+                </div>
+              </div>
+              {{ r.object.appraisal_comment|safe }}
+              {% if r.object.is_appeal %}
+               <div class="ui raised secondary segment">
+                 <div class="ui small header">
+                   <i class="pointing up icon"></i>
+                   <div class="content">
+                     {{ lang|phrase:'Predecessor_appealed' }}
+                   </div>
+                 </div>
+               </div>
+              {% endif %} 
+              {% if r.object.improvement_appraisal %}
+                <div class="ui secondary segment">
+                  <div class="ui small header">
+                    {{ r.imp_opinion|safe }}
+                  </div>
+                  {{ r.object.improvement_appraisal_comment|safe }}
+                </div>
+              {% elif not r.object.is_rejection %}
+                <p>
+                  {{ lang|phrase:'No_comment' }}
+                </p>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if r.time_acknowledged %}
+            <p style="font-size: small; font-style: italic">
+              {{ lang|phrase:'You_acknowledged_on' }} {{ r.time_acknowledged }}
+            </p>
+          {% endif %}
+          {% if r.time_assigned %}
+            <div class="ui secondary segment">
+              <p style="font-size: small; font-style: italic">
+                <i class="pointing up icon"></i>
+                {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
+                {% if r.time_first_viewed %}
+                  {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
+                {% endif %}
+                {% if r.time_decided %}
+                  {{ lang|phrase:'Appeal_decided_on' }} {{ r.time_decided }}.
+                {% endif %}
+              </p>
+              {% if r.time_decided %}
+                <div class="ui small header">
+                  <i class="law icon"></i>
+                  <div class="content">
+                    {{ lang|phrase:'Referee_motivation' }}
+                    {% if identify %}
+                      <span style="font-weight:500">({{ r.referee }})</span>
+                    {% endif %}
+                  </div>
+                </div>
+                {{ r.ref_motiv|safe }}
+                <label><strong>{{ lang|phrase:'Referee_on_pred_work' }}:</strong></label>
+                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
+                {% if r.time_your_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Your_dec_appraisal' }}</strong>:
+                    <i class="{{ r.your_appr_icon }} icon"></i>
+                    &nbsp;&nbsp;<small><em>({{ r.time_your_appr }})</em></small>
+                  </div>
+                  {{ r.your_motiv|safe }}
+                {% endif %}
+                {% if r.time_other_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Other_dec_appraisal' }}</strong>:
+                    <i class="{{ r.other_appr_icon }} icon"></i>
+                    {# NOTE: here, too, time is showed to instructors only #}
+                    {% if identify %}
+                      &nbsp;&nbsp;<small><em>({{ r.time_other_appr }})</em>
+                      {% if no_names %}
+                        #({{ r.object.reviewer.student.id }})
+                      {% else %}
+                        {{ r.object.reviewer.student.dummy_name }}
+                      {% endif %}
+                      </small>
+                    {% endif %}
+                  </div>
+                  {{ r.other_motiv|safe }}
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>  {# closes orange review segment DIV #}
+      {% endfor %}  {# for r in pred_reviews #}
+
+      {% if s.uploaded %}
+        <div id="rh-{{ s.step_nr }}-uploaded" class="ui purple segment">
+          <p style="font-size: small; font-style: italic">
+            <span style="margin-right: 2em">{{ s.You_uploaded }}</span>
+            {% if s.time_bonus %}
+              <span style="white-space: nowrap">
+                <span style="font-style: normal; font-weight: bold; margin-right:-0.3em">&plus;</span>
+                <i class="yellow half star icon" style="margin-right: -0.2em"></i>
+                {{ s.time_bonus }}
+              </span>
+            {% endif %}
+          </p>
+          {% if s.upl_items|length > 0 %}
+            {% for ui in s.upl_items %}
+              <div>
+                <strong>{{ ui.item.number }}. {{ ui.item.name }}</strong>
+                <div id="pr-{{ s.step_nr }}-{{ forloop.parentloop.counter }}-itap-{{ ui.item.number }}"
+                     style="display: inline-block; margin-left: 1em">
+                </div>
+              </div>
+              {{ ui.comment|safe }}
+            {% endfor %}
+          {% endif %}
+          {% if s.own_file_list %}
+            <div class="ui tiny purple inverted compact stackable menu">
+              {% if object.estafette.is_archived %}  
+                <div class="item">
+                  {{ lang|phrase:'Archived' }}
+                </div>
+              {% else %}
+                <div class="header item">
+                  {{ lang|phrase:'View_own_work' }}:
+                </div>
+                {% for f in s.own_file_list %}
+                  <a class="item" href="download/{{ f.name }}/{{ s.own_hex }}" target="_blank">
+                    {{ f.prompt }}
+                  </a>
+                {% endfor %}
+                {% if s.own_file_list|length > 1 %}
+                  <a class="item" href="download/all-zipped/{{ s.own_hex }}" target="_blank">
+                    <i class="file archive outline icon"></i>
+                    {{ lang|phrase:'Download_all' }}
+                  </a>
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+      
+    {% for r in s.succ_reviews %}
+      <div class="ui violet segment">
+        <div class="ui small header">
+          {{ lang|phrase:'Successor_feedback' }}
+          {# NOTE: to better protect anonymity, time of review disclosed only to instructors #}
+          {% if identify %}
+            <span style="font-weight:500">
+              &larr;
+              {% if no_names %}
+                #({{ r.object.reviewer.student.id }})
+              {% else %}
+                {{ r.object.reviewer.student.dummy_name }}
+              {% endif %}
+              <small><em>({{ r.time_submitted }})</em></small>
+            </span>
+          {% endif %}
+        </div>
+        <div class="ui {{ s.color }} secondary segment">
+          {% if r.rev_items|length > 0 %}
+            <p><strong><em>{{ lang|phrase:'Specific_review_items' }}</em></strong></p>
+            {% for ri in r.rev_items %}
+              <div>
+                <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                <div id="sr-{{ s.step_nr }}-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}"
+                     style="display: inline-block; margin-left: 1em">
+                </div>
+              </div>
+              {{ ri.comment|safe }}
+            {% endfor %}
+            <p><strong><em>{{ lang|phrase:'Overall_review' }}</em></strong></p>
+          {% endif %}
+          {{ r.object.grade_motivation|safe }}
+          <label><strong>{{ lang|phrase:'Successor_rating' }}:</strong></label>
+          <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+        </div>
+        {% if r.object.is_rejection %}
+          <div class="ui secondary segment">
+            <div class="ui small header">
+              <i class="thumbs down icon"></i>
+              <div class="content">
+                {{ lang|phrase:'Has_been_rejected' }}
+                <div class="sub header">{{ lang|phrase:'No_follow_up' }}</div>
+              </div>
+            </div>
+          </div>
+        {% elif s.succ_file_list %}
+          <div class="ui tiny compact stackable menu" style="margin-bottom: 1em">
+            {% if object.estafette.is_archived %}  
+              <div class="item">
+                {{ lang|phrase:'Archived' }}
+              </div>
+            {% else %}
+              <div class="header item">
+                {{ lang|phrase:'View_successors_work' }}:
+              </div>
+              {% for f in s.succ_file_list %}
+              <a class="item" href="download/{{ f.name }}/{{ s.succ_hex }}" target="_blank">
+                {{ f.prompt }}
+              </a>
+              {% endfor %}
+              {% if s.succ_file_list|length > 1 %}
+                <a class="item" href="download/all-zipped/{{ s.succ_hex }}" target="_blank">
+                  <i class="file archive outline icon"></i>
+                  {{ lang|phrase:'Download_all' }}
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endif %}
+        {% if not r.app_header %}
+          <div style="font-style: italic">{{ lang|phrase:'You_must_respond' }}</div>
+        {% else %}
+          <div style="font-size: small; font-style: italic; margin-bottom: -0.5em">
+            {{ lang|phrase:'You_responded_on' }} {{ r.time_appraised }}
+          </div>
+          <div class="ui small header">
+            <i class="{{r.app_icon}} icon"></i>
+            <div class="content">
+              {{ r.app_header }}
+            </div>
+          </div>
+          {{ r.object.appraisal_comment|safe }}
+          {% if r.object.is_appeal %}
+            <div class="ui segment">
+              <div class="ui tiny header">
+                <i class="pointing up icon"></i>
+                <div class="content">
+                  {{ lang|phrase:'You_have_appealed' }}
+                </div>
+              </div>
+            </div>
+          {% endif %}
+          {% if r.imp_opinion and not r.object.is_rejection %}
+            <div class="ui segment">
+              <div class="basic segment" style="font-size: small">
+                <div class="ui small header">
+                  <i class="talk icon"></i>
+                  <div class="content">
+                    {{ r.imp_opinion|safe }}
+                  </div>
+                </div>
+                {% if r.object.improvement_appraisal > 0 %}
+                  {{ r.object.improvement_appraisal_comment|safe }}
+                  <em>{{ lang|phrase:'Does_not_invalidate'|safe }}</em>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+          {% if r.time_assigned %}
+            <div class="ui secondary segment">
+              <p style="font-size: small; font-style: italic">
+                <i class="pointing up icon"></i>
+                {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
+                {% if r.time_first_viewed %}
+                  {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
+                {% endif %}
+                {% if r.time_decided %}
+                  {{ lang|phrase:'Appeal_decided_on' }} {{ r.time_decided }}.
+                {% endif %}
+              </p>
+              {% if r.time_decided %}
+                <div class="ui small header">
+                  <i class="law icon"></i>
+                  <div class="content">
+                    {{ lang|phrase:'Referee_motivation' }}
+                    {% if identify %}
+                      <span style="font-weight:500">({{ r.referee }})</span>
+                    {% endif %}
+                  </div>
+                </div>
+                {{ r.ref_motiv|safe }}
+                <label><strong>{{ lang|phrase:'Referee_on_your_work' }}:</strong></label>
+                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
+                {% if r.time_your_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Your_dec_appraisal' }}</strong>:
+                    <i class="{{ r.your_appr_icon }} icon"></i>
+                    &nbsp;&nbsp;<small><em>({{ r.time_your_appr }})</em></small>
+                  </div>
+                  {{ r.your_motiv|safe }}
+                {% endif %}
+                {% if r.time_other_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Other_dec_appraisal' }}</strong>:
+                    <i class="{{ r.other_appr_icon }} icon"></i>
+                    {# NOTE: here, too, time is shown only to instructors #}
+                    {% if identify %}
+                      &nbsp;&nbsp;<small><em>({{ r.time_other_appr }})</em>
+                      &larr;
+                      {% if no_names %}
+                        #({{ r.object.reviewer.student.id }})
+                      {% else %}
+                        {{ r.object.reviewer.student.dummy_name }}
+                      {% endif %}
+                      </small>
+                    {% endif %}
+                  </div>
+                  {{ r.other_motiv|safe }}
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endif %}  {# successor review was appraised #}
+      </div>
+      {% endfor %}  {# r in succ_reviews #}
+    </div>  {# end of step segment DIV #}
+  {% endfor %}  {# s in steps #}
+
+  {% for r in final_reviews %}
+    <div class="ui orange inverted segment">
+      <div class="ui small header">
+        <i class="star outline icon"></i>
+        <div class="content">
+          {{ r.header|safe }}
+        </div>
+      </div>
+    </div>
+    <div class="ui segment">
+      <div class="ui top attached secondary segment">
+        {{ r.case_title }}
+      </div>
+      <div class="ui {% if not r.case_hex %}bottom {% endif %}attached segment">
+        {{ r.case|safe }}
+      </div>
+      {% if r.case_hex %}
+        <div class="ui bottom attached secondary segment">
+          <em><strong>{{ lang|phrase:'Case_has_attachment' }}</strong></em>
+          <a class="ui mini black button" href="download/case/{{ s.case_hex }}"
+             style="margin-left: 2em">
+            <i class="download icon"></i>
+            {{ lang|phrase:'Download' }}
+          </a>
+        </div>
+      {% endif %}
+      <div id="rh-fr{{ r.nr }}-downloaded" class="ui blue segment">
+        <p style="font-size: small; font-style: italic">
+          {{ lang|phrase:'You_downloaded_on' }} {{r.time_first_download }}
+        </p>
+      </div>
+    </div>
+    <div id="rh-fr{{ r.nr }}-reviewed" class="ui orange segment">
+      <p style="font-size: small; font-style: italic">
+        {{ lang|phrase:'You_reviewed_on' }} {{r.time_submitted }}
+      </p>
+      <div class="ui tiny orange inverted compact stackable menu">
+        {% if object.estafette.is_archived %}  
+          <div class="item">
+            {{ lang|phrase:'Archived' }}
+          </div>
+        {% else %}
+          <div class="header item">
+            {{ lang|phrase:'View_pred_work' }}:
+          </div>
+          {% for f in r.pred_file_list %}
+            <a class="item" href="download/{{ f.name }}/{{ r.pred_hex }}" target="_blank">
+              {{ f.prompt }}
+            </a>
+          {% endfor %}
+          {% if r.pred_file_list|length > 1 %}
+            <a class="item" href="download/all-zipped/{{ r.pred_hex }}" target="_blank">
+              <i class="file archive outline icon"></i>
+              {{ lang|phrase:'Download_all' }}
+            </a>
+          {% endif %}
+        {% endif %}
+      </div>
+      <div class="ui small header">
+        {{ lang|phrase:'Your_review' }}
+        {% if identify %}
+          <span style="font-weight:500">&rarr;
+          {% if no_names %}
+            #({{ r.object.assignment.participant.student.id }})
+          {% else %}
+            {{ r.object.assignment.participant.student.dummy_name }}
+          {% endif %}
+          </span>
+        {% endif %}
+      </div>
+      {% if r.rev_items|length > 0 %}
+        <p><strong><em>{{ lang|phrase:'Specific_review_items' }}</em></strong></p>
+        {% for ri in r.rev_items %}
+          <div>
+            <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+            <div id="fr-{{ forloop.parentloop.counter }}-itap-{{ ri.item.number }}"
+                 style="display: inline-block; margin-left: 1em">
+            </div>
+          </div>
+          {{ ri.comment|safe }}
+        {% endfor %}
+        <p><strong><em>{{ lang|phrase:'Overall_review' }}</em></strong></p>
+      {% endif %}
+      {{ r.object.grade_motivation|safe }}
+      <label><strong>{{ lang|phrase:'Your_rating' }}:</strong></label>
+      <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+      {%  if r.time_appraised %}
+        <div class="ui secondary segment">
+          <div class="ui small header">
+            <i class="{{ r.app_icon }} icon"></i>
+            <div class="content">
+              {{ r.app_header }}
+              {# NOTE: appraisal time is only shown to instructors #}
+              {% if identify %}
+                <span style="font-weight:500">({{ r.time_appraised }})</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if r.object.appraisal_comment %}
+            {{ r.object.appraisal_comment|safe }}
+          {% endif %} 
+          {% if r.object.is_appeal %}
+            <div class="ui raised secondary segment">
+              <div class="ui small header">
+                <i class="pointing up icon"></i>
+                <div class="content">
+                  {{ lang|phrase:'Predecessor_appealed' }}
+                </div>
+              </div>
+            </div>
+          {% endif %} 
+          {% if r.time_acknowledged %}
+            <p style="font-size: small; font-style: italic">
+              {{ lang|phrase:'You_acknowledged_on' }} {{ r.time_acknowledged }}
+            </p>
+          {% endif %}
+          {% if r.time_assigned %}
+            <div class="ui secondary segment">
+              <p style="font-size: small; font-style: italic">
+                <i class="pointing up icon"></i>
+                {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
+                {% if r.time_first_viewed %}
+                  {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
+                {% endif %}
+                {% if r.time_decided %}
+                  {{ lang|phrase:'Appeal_decided_on' }} {{ r.time_decided }}.
+                {% endif %}
+              </p>
+              {% if r.time_decided %}
+                <div class="ui small header">
+                  <i class="law icon"></i>
+                  <div class="content">
+                    {{ lang|phrase:'Referee_motivation' }}
+                    {% if identify %}
+                      <span style="font-weight:500">({{ r.referee }})</span>
+                    {% endif %}
+                  </div>
+                </div>
+                {{ r.ref_motiv|safe }}
+                <label><strong>{{ lang|phrase:'Referee_on_pred_work' }}:</strong></label>
+                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
+                {% if r.time_your_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Your_dec_appraisal' }}</strong>:
+                    <i class="{{ r.your_appr_icon }} icon"></i>
+                    &nbsp;&nbsp;<small><em>({{ r.time_your_appr }})</em></small>
+                  </div>
+                  {{ r.your_motiv|safe }}
+                {% endif %}
+                {% if r.time_other_appr %}
+                  <div>
+                    <strong>{{ lang|phrase:'Other_dec_appraisal' }}</strong>:
+                    <i class="{{ r.other_appr_icon }} icon"></i>
+                    {# NOTE: here, too, time is showed to instructors only #}
+                    {% if identify %}
+                      &nbsp;&nbsp;<small><em>({{ r.time_other_appr }})</em></small>
+                    {% endif %}
+                  </div>
+                  {{ r.other_motiv|safe }}
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>  {# closes review segment DIV #}
+  {% endfor %}  {# for r in pred_reviews #}
+</div>  {# segments div #}
+
+{% block progress_modal %}
+<div id="progress-modal" class="ui tiny modal">
+  <div class="actions">
+    <div class="ui cancel icon button">
+      <i class="cancel icon"></i>
+    </div>
+  </div>
+  <div id="progress-header" class="header" style="margin-top: -3em">
+    {{ lang|phrase:'Progress_chart' }}
+  </div>
+  <div class="image content" style="margin-top:-1em">
+    <img class="image" src="progress/p/{{ hex }}">
+  </div>
+</div>
+{% endblock progress_modal %}
+
+{% endblock page_content %}
