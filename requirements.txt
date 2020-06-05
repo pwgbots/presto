@@ -1,4 +1,4 @@
-Django==1.11.21
+Django==1.11.29
 django-ipware==2.1.0
 fpdf==1.7.2
 langdetect==1.0.7
