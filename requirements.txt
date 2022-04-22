@@ -9,7 +9,7 @@ Markdown==2.6.9
 openpyxl==2.4.9
 Pillow==7.1.0
 PyLTI==0.6.0
-PyPDF2==1.26.0
+PyPDF2==1.27.5
 python-docx==0.8.6
 python-pptx==0.6.6
 
