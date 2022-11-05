@@ -14,7 +14,7 @@ fpdf==1.7.2
 httplib2==0.21.0
 idna==3.4
 langdetect==1.0.9
-lxml==4.9.0
+lxml==4.9.1
 Markdown==3.4.1
 mysql==0.0.3
 mysqlclient==2.1.1
