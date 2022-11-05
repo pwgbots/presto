@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,9 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.contrib import admin
 from django.contrib.auth.models import Group
@@ -52,7 +49,7 @@ class AppealAdmin(admin.ModelAdmin):
     raw_id_fields = ('referee', 'review')
         
 class AssignmentAdmin(admin.ModelAdmin):
-    raw_id_fields = ('successor', 'predecessor', 'clone_of')
+    raw_id_fields = ('successor', 'predecessor', 'clone_of', 'participant')
     
 class ItemReviewAdmin(admin.ModelAdmin):
     raw_id_fields = ['review']
@@ -60,6 +57,9 @@ class ItemReviewAdmin(admin.ModelAdmin):
 class PeerReviewAdmin(admin.ModelAdmin):
     raw_id_fields = ('assignment', 'reviewer')
     
+class ParticipantAdmin(admin.ModelAdmin):
+    raw_id_fields = ['student']
+
 class ParticipantUploadAdmin(admin.ModelAdmin):
     raw_id_fields = ['assignment']
 
@@ -83,7 +83,7 @@ admin.site.register(Language)
 admin.site.register(LegVideo)
 admin.site.register(LetterOfAcknowledgement)
 admin.site.register(Objection)
-admin.site.register(Participant)
+admin.site.register(Participant, ParticipantAdmin)
 admin.site.register(ParticipantUpload, ParticipantUploadAdmin)
 admin.site.register(PeerReview, PeerReviewAdmin)
 admin.site.register(PrestoBadge)

@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -82,7 +78,7 @@ def picture_queue(request, **kwargs):
         if not (c.manager == context['user'] or c.instructors.filter(id=context['user'].id)):
             log_message('ACCESS DENIED: Invalid course parameter', context['user'])
             return render(request, 'presto/forbidden.html', context)
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
 
@@ -92,7 +88,7 @@ def picture_queue(request, **kwargs):
             old_path = qp.picture.path
             qp.delete()
             os.remove(old_path)
-        except Exception, e:
+        except Exception as e:
             warn_user(context, 'Failed to delete queue picture', 'System status: ' + str(e[0]))
     # if queue picture is to be displayed, push its image file to the browser
     elif act == 'get':
@@ -112,7 +108,10 @@ def picture_queue(request, **kwargs):
         mailbox.user(settings.PICTURE_QUEUE_MAIL)
         mailbox.pass_(settings.PICTURE_QUEUE_PWD)
         msg_count = len(mailbox.list()[1])
-        log_message('Picture queue found %d message(s) in pq mailbox' % msg_count, context['user'])
+        log_message(
+            'Picture queue found {} message(s) in pq mailbox'.format(msg_count),
+            context['user']
+            )
         for i in range(msg_count):
             response, msg_as_list, size = mailbox.retr(i + 1)
             msg = email.message_from_string('\r\n'.join(msg_as_list))
@@ -132,8 +131,12 @@ def picture_queue(request, **kwargs):
             # delete any message not having both a valid course code and a time stamp,
             # as well as any message older than 24 hours
             if not (c_code and time_received) or (timezone.now() - time_received).days >= 1:
-                log_message('Deleting picture queue message #%d (invalid course code "%s" or too old)' %
-                    (i + 1, c_code), context['user'])
+                log_message(
+                    'Deleting picture queue message #{} (invalid course code "{}" or too old)'.format(
+                        i + 1,
+                        c_code
+                        ), context['user']
+                    )
                 mailbox.dele(i + 1)
             # NOTE: only process messages having a subject that starts with this course's code;
             #       other messages may pertain to other courses and hence should not be deleted
@@ -143,24 +146,42 @@ def picture_queue(request, **kwargs):
                         course__code__iexact=c_code).count() > 0
                 # if queue is closed, or "strict" while not a course student, delete the message
                 if not c.picture_queue_open or (c.picture_queue_strict and not is_student):
-                    log_message('Deleting picture queue message #%d from %s' %
-                        (i + 1, sender[1]), context['user'])
+                    log_message(
+                        'Deleting picture queue message #{} from {}'.format(
+                            i + 1,
+                            sender[1]
+                            ),
+                        context['user']
+                        )
                     mailbox.dele(i + 1)
                 else:
                     # process the message content
-                    log_message('Processing picture queue message #%d' % (i + 1), context['user'])
+                    log_message(
+                        'Processing picture queue message #{}'.format(i + 1),
+                        context['user']
+                        )
                     try:
                         process_attachment(msg, c, time_received, sender, subject)
                         # only delete the message if processing was successful
                         # NOTE: if problem persists, message will be deleted after 24 hours
-                        log_message('Success - message #%d can be deleted' % (i + 1), context['user'])
+                        log_message(
+                            'Success - message #{} can be deleted'.format(i + 1),
+                            context['user']
+                            )
                         mailbox.dele(i + 1)
-                    except Exception, e:
-                        log_message('FAILURE -- error message: ' + str(e), context['user'])
+                    except Exception as e:
+                        log_message(
+                            'FAILURE -- error message: ' + str(e),
+                            context['user']
+                            )
         # close mailbox connection -- marked messages will now be deleted
         mailbox.quit()
-    except Exception, e:
-        warn_user(context, 'Error while retrieving mail', 'System message: ' + str(e))
+    except Exception as e:
+        warn_user(
+            context,
+            'Error while retrieving mail',
+            'System message: ' + str(e)
+            )
 
     # add picture queue mail address
     context['pq_mail'] = settings.PICTURE_QUEUE_MAIL
@@ -172,8 +193,10 @@ def picture_queue(request, **kwargs):
         'start': c.language.fdate(c.start_date),
         'end': c.language.fdate(c.end_date),
         'manager': prefixed_user_name(c.manager),                         
-        'instructors': ', '.join([prefixed_user_name(i) for i in c.instructors.all()])
-    }
+        'instructors': ', '.join(
+            [prefixed_user_name(i) for i in c.instructors.all()]
+            )
+        }
 
     # add list of queue pictures for this course
     context['pictures'] = [{

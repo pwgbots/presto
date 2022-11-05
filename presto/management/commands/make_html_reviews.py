@@ -23,19 +23,18 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-"""
-WSGI config for PrESTO project.
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+from django.conf import settings
+from django.core.management.base import BaseCommand
 
-It exposes the WSGI callable as a module-level variable named ``application``.
+from presto.models import PeerReview, DEFAULT_DATE
 
-For more information on this file, see
-https://docs.djangoproject.com/en/1.11/howto/deployment/wsgi/
-"""
+# convert grade_motivation, appraisal_comment, and improvement_appraisal_comment fields
+# of ALL PeerReview records from markdown format to HTML
+class Command(BaseCommand):
 
-import os
+    def handle(self, *args, **options):
+        prl = PeerReview.objects.exclude(grade_motivation='').exclude(grade_motivation__icontains='<p>')
+        print len(prl)
 
-from django.core.wsgi import get_wsgi_application
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "presto-project.settings")
-
-application = get_wsgi_application()

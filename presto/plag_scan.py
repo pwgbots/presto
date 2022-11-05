@@ -1,9 +1,11 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Project Relay Plagiarism Scanner
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,19 +25,22 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
 from django.utils.html import strip_tags 
 
-from .models import Assignment, EstafetteLeg, Participant, ParticipantUpload, DEFAULT_DATE
+from .models import (
+    Assignment,
+    DEFAULT_DATE,
+    EstafetteLeg,
+    Participant,
+    ParticipantUpload,
+    SHORT_DATE_TIME,
+    )
 
-from presto.utils import log_message
+from presto.utils import log_message, pdf_to_text
 
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -45,71 +50,106 @@ from json import dumps, loads
 from markdown import markdown
 import os
 import time
-from subprocess import check_output
 from zipfile import ZipFile
 
-# maximum duration of a single scan (to prevent request timeouts)
+# Maximum duration (in seconds) of a single scan (to prevent request timeouts).
 MAX_SECONDS = 30
 
-# minimum number of characters to be considered a relevant match during text comparison
+# Minimum number of characters to be considered a match during text comparison.
 MATCH_THRESHOLD = 20
 
-# minimum total length of detected matches to be considered as potential plagiarism
+# Minimum total length of detected matches to be suspected of plagiarism.
 TOTAL_MATCH_THRESHOLD = 150
 
-# minimum matching percentage to be considered suspect
+# Minimum matching percentage to be considered suspect:
 SUSPICION_THRESHOLD = 3
 
-# HTML green-to-red color scale to highlight matching percentages
-SCAN_STATUS_COLORS = [(0, '#00bb00'), (1, '#a8c818'), (SUSPICION_THRESHOLD, '#d0d000'),
-    (10, '#d89818'), (20, '#d85818'), (30, '#d82818'), (40, '#ff0000'),
-    (50, '#d80000'), (200, '#a80000'), (1000, '#a80000')]
+# HTML green-to-red color scale to highlight matching percentages.
+SCAN_STATUS_COLORS = [
+    (0, '#00bb00'),
+    (1, '#a8c818'),
+    (SUSPICION_THRESHOLD, '#d0d000'),
+    (10, '#d89818'),
+    (20, '#d85818'),
+    (30, '#d82818'),
+    (40, '#ff0000'),
+    (50, '#d80000'),
+    (200, '#a80000'),
+    (1000, '#a80000')
+    ]
 
-# HTML to denote scan status with numbered cicles (NOTE: works only up to 10 steps)
-OPEN_SCAN_SYMBOL = '<span style="color: %s">&#x278%x;</span>'
-SOLID_SCAN_SYMBOL = '<span style="color: %s">&#x278%x;</span>'
+# HTML to denote scan status with numbered cicles.
+# NOTE: This works only up to 10 steps, due to limited HTML entity set.
+OPEN_SCAN_SYMBOL = '<span style="color: {}">&#x278{:x};</span>'
+SOLID_SCAN_SYMBOL = '<span style="color: {}">&#x278{:x};</span>'
 
-# HTML to denote non-matching text left out between matches
-BLUE_ELLIPSIS = '<span style="color: #00A6D6"> [...%d...] </span>'
+# HTML to denote non-matching text left out between matches.
+BLUE_ELLIPSIS = '<span style="color: #00A6D6"> [...{}...] </span>'
 
-# separator tag for tell-tales added to extracted text from OpenDoc files
+# Separator tag for tell-tales added to extracted text from OpenDoc files.
 TELLTALE_SEPARATOR = '!!--TELL-TALES--!!'
 
-# XML tag for OpenDoc file creation time
+# XML tag for OpenDoc file creation time.
 TIME_CREATED_TAG = '<dcterms:created xsi:type="dcterms:W3CDTF">'
 
-# typical fragments to ignore while scanning
-COMMON_FRAGMENTS = ['https://', 'http://', 'presto.tudelft.nl', 'mod-est.tbm.tudelft.nl',
-    'openclipart.org/', 'www.flaticon.com/', 'www.pexels.com/', 'pixabay.com/', 'www.rgbstock.com/',
-    'raadpleegd op', 'llustratie]']
+# Typical fragments to ignore while scanning.
+COMMON_FRAGMENTS = [
+    'https://',
+    'http://',
+    'presto.tudelft.nl',
+    'sysmod.tbm.tudelft.nl',
+    'openclipart.org/',
+    'www.flaticon.com/',
+    'www.pexels.com/',
+    'pixabay.com/',
+    'www.rgbstock.com/',
+    'raadpleegd op',
+    'llustratie]'
+    ]
 
 
-# returns a color on a green via orange to red scale to signal high matching percentages
 def status_color(perc):
-    perc = abs(perc)  # percentages may be negative to signal suspect RELATED matches
+    """
+    Return a color on a green-to-red scale to signal high matching percentages.
+    """
+    # Percentages may be < 0 (to signal suspect RELATED matches).
+    perc = abs(perc)
     for p, c in SCAN_STATUS_COLORS:
         if perc <= p:
             return c
-    return '#000000'  # defaults to black (should occur only when perc is not a number)
+    # Default to black (should occur only when perc is not a number).
+    return '#000000'
 
 
-# returns HTML denoting a numbered circle in the color corresponding to the match percentage,
-# or silver if no percentage is passed
-# NOTE: a negative value of perc indicates a suspect match with RELATED work;
-#       this is indicated with colored OPEN numbered circles
 def step_status(nr, perc=None):
+    """
+    Return an HTML string denoting a matching text percentage indicator.
+
+    This indicator is a numbered circle in the color corresponding to the match
+    percentage, or silver if no percentage is passed.
+
+    A negative value of perc indicates a significant match with RELATED work.
+    The indicator symbol then is a colored OPEN numbered circle.
+    """
     if perc is None:
-        return OPEN_SCAN_SYMBOL % ('silver', nr - 1)
+        return OPEN_SCAN_SYMBOL.format('silver', nr - 1)
     if perc < 0:
-        return OPEN_SCAN_SYMBOL % (status_color(perc), nr - 1)
-    return SOLID_SCAN_SYMBOL % (status_color(perc), (nr + 9) % 16)
+        return OPEN_SCAN_SYMBOL.format(status_color(perc), nr - 1)
+    return SOLID_SCAN_SYMBOL.format(status_color(perc), (nr + 9) % 16)
 
 
-# retrieves text from:
-# - DOCX documents (paragraphs only, so ignoring tables, headers, etc.)
-# - a PDF document (using the Unix pdftotext utility --  will not work on Windows platform!)
-# and appends some "tell tale" properties from DOCX and XLSX files
 def ascii_from_doc(path, text_to_ignore=[]):
+    """
+    Extract text from document and return it as a plain ASCII string after
+    removing strings specified by text_to_ignore.
+    
+    Retrieves text from:
+     - a DOCX document (paragraphs only, so ignoring tables, headers, etc.)
+     - a PDF document (using pdftotext --  see presto-project/settings.py)
+
+    NOTE: Appends "tell tale" properties from DOCX and XLSX files, such as
+          file creation time and byte count of embedded images.
+    """
     ext = os.path.splitext(path)[1].lower()
     if ext == '.docx':
         f = open(path, 'rb')
@@ -133,45 +173,49 @@ def ascii_from_doc(path, text_to_ignore=[]):
                 # append for each image file a line "<extension>=<file size>+<CRC>" 
                 for i in zf.infolist():
                     if i.filename[:11] == 'word/media/':
-                        ascii += '\n%s=%d+%d' % (os.path.splitext(i.filename)[1].lower(),
-                            i.file_size, i.CRC)
+                        ascii += '\n{}={}+{}'.format(
+                            os.path.splitext(i.filename)[1].lower(),
+                            i.file_size,
+                            i.CRC
+                            )
                     elif i.filename == 'docProps/core.xml':
                         try:
                             # try to extract the creation time stamp
                             core = zf.read(i)
-                            #log_message('%d bytes read from core' % len(core))
+                            # log_message('{} bytes read from core'.format(len(core)))
                             p = core.index(TIME_CREATED_TAG) + len(TIME_CREATED_TAG)
                             cdt = core[p:p + 16]
                             # ignore the presto "undefined" date
                             if cdt != '2001-01-01T00:00':
-                                ascii += '\ncreated=%s' % cdt
+                                ascii += '\ncreated=' + cdt
                         except Exception:
                             # ignore any errors while checking core.xml
                             pass
 
-        except Exception, e:
+        except Exception as e:
             error = str(e)
         if error:
-            log_message('WARNING: Failed to scan file %s as ZIP archive\n%s' % (path, error))
+            log_message(
+                'WARNING: Failed to scan file {} as ZIP archive\n{}'.format(
+                    path,
+                    error
+                    )
+                )
         return ascii
     elif ext == '.pdf':
-        ascii = ''
-        try:
-            # extract text from PDF as 7-bit ASCII (note: this also removes 'hard' spaces)
-            ascii = check_output(['pdftotext', '-enc', 'ASCII7', path, '-'])
-            # remove sequences of 3+ periods (typically occur in table of contents)
-            ascii = ' '.join(ascii.replace('...', '').strip().split())
-            # remove text to ignore
-            for t in text_to_ignore:
-                ascii = ascii.replace(t.encode('ascii', 'ignore'), '')
-        except Exception, e:
-            log_message('ERROR: Failed to execute pdftotext for file %s\n%s' % (path, str(e)))
+        ascii = pdf_to_text(path)
+        # remove sequences of 3+ periods (typically occur in table of contents)
+        ascii = ' '.join(ascii.replace('...', '').strip().split())
+        # remove text to ignore
+        for t in text_to_ignore:
+            ascii = ascii.replace(t.encode('ascii', 'ignore'), '')
         return ascii
     elif ext == '.xlsx':
-        # NOTE: Excel files are not scanned for text, but -- similar to Word files -- for the images
-        #       they contain (in xl/media), for their shared strings (in xl/sharedStrings.xml),
-        #       and for their creation date (from docProps/core)
-        # NOTE: we signal this the start of the "tell-tale list" with a separator
+        # NOTE: Excel files are not scanned for text, but -- similar to Word
+        #       files -- for the images they contain (in xl/media), for their
+        #       shared strings (in xl/sharedStrings.xml), and for their
+        #       creation date (from docProps/core).
+        # NOTE: We signal this the start of the "tell-tale list" with a separator.
         ascii = TELLTALE_SEPARATOR
         error = ''
         try:
@@ -179,38 +223,57 @@ def ascii_from_doc(path, text_to_ignore=[]):
                 # append for each image file a line "<extension>=<file size>+<CRC>" 
                 for i in zf.infolist():
                     if i.filename[:9] == 'xl/media/':
-                        ascii += '\n%s=%d+%d' % (os.path.splitext(i.filename)[1].lower(),
-                            i.file_size, i.CRC)
+                        ascii += '\n{}={}+{}'.format(
+                            os.path.splitext(i.filename)[1].lower(),
+                            i.file_size,
+                            i.CRC
+                            )
                     elif i.filename == 'docProps/core.xml':
                         try:
-                            # try to extract the creation time stamp
+                            # Try to extract the creation time stamp.
                             core = zf.read(i)
-                            #log_message('%d bytes read from core' % len(core))
+                            # log_message('{} bytes read from core'.format(len(core)))
                             p = core.index(TIME_CREATED_TAG) + len(TIME_CREATED_TAG)
                             cdt = core[p:p + 16]
-                            # ignore the presto "undefined" date
-                            if cdt != '2001-01-01T00:00' and cdt !='2018-11-19T11:54':
-                                ascii += '\ncreated=%s' % cdt
+                            # Ignore the presto "undefined" date.
+                            if cdt != '2001-01-01T00:00':
+                                ascii += '\ncreated=' + cdt
                         except Exception:
-                            # ignore any errors while checking core.xml
+                            # Ignore any errors while checking core.xml.
                             pass
-        except Exception, e:
+        except Exception as e:
             error = str(e)
         if error:
-            log_message('WARNING: Failed to scan file %s as ZIP archive\n%s' % (path, error))
+            log_message(
+                'WARNING: Failed to scan file {} as ZIP archive\n{}'.format(
+                    path,
+                    error
+                    )
+                )
         return ascii
     else:
-        log_message('File %s is not DOCX, XLSX or PDF and hence not scanned' % path)
+        log_message(
+            'File {} is not DOCX, XLSX or PDF, and hence not scanned'.format(path)
+            )
         return ''
 
 
-# returns a tuple (percentage, report) where:
-#  percentage: the total length of matching parts in the text file divided by the length
-#              of the original text (minus strings in list text_to_ignore) * 100
-#  report:     a Markdown-formatted description on size, position, and content of matching
-#              text of at least min_length characters
-def scan_report(text, req_file, path, aid, author, upload_time, related, min_length, text_to_ignore=[]):
-    # NOTE: we also scan for matching "tell-tales"
+def scan_report(text, req_file, path, aid, author, upload_time,
+                related, min_length, text_to_ignore=[]):
+    """
+    Return a tuple (percent match, report).
+    
+    text: The text being scanned.
+    req_file: The "requested file" to be checked for overlap with this text. 
+    
+    Percent match is calculated as the total length of matching parts in the
+    text divided by the length of the original text (minus strings in list
+    text_to_ignore) * 100.
+    Report is a Markdown-formatted description on size, position, and content
+    of matching text of at least min_length characters.
+    
+    NOTE: Text is also scanned for matching "tell-tales".
+    """
     tell_tales = ''
     tt_percent = 0
     # test whether a "tell-tale" scan is needed
@@ -228,14 +291,18 @@ def scan_report(text, req_file, path, aid, author, upload_time, related, min_len
         # check if there are any "tell-tales"
         pairs = pairs.split('\n')
         if len(pairs) == 0:
-            tell_tales = '_(No tell-tales in file `%s`)_' % os.path.basename(path)
+            tell_tales = '_(No tell-tales in file `{}`)_'.format(
+                os.path.basename(path)
+                )
         else:
            # get the text content from the file to scan
             scan_text = ascii_from_doc(path)
             # return warning report if no "tell-tales" detected
             if TELLTALE_SEPARATOR not in scan_text:
-                tell_tales = ('_**WARNING:** File `%s` did not scan as OpenDocument._' %
-                    os.path.basename(path))
+                tell_tales = (
+                    '_**WARNING:** File `{}` did not scan as OpenDocument._'.format(
+                        os.path.basename(path))
+                    )
             else: 
                 # parse tell tales (these all have form "key|value")
                 parts = scan_text.split(TELLTALE_SEPARATOR)
@@ -255,7 +322,10 @@ def scan_report(text, req_file, path, aid, author, upload_time, related, min_len
         # report matching "tell-tales" (if any)
         if len(matches) > 0:
             tt_percent = int(100 * len(matches) / len(pairs))
-            tell_tales = 'Tell-tales: %d%% match (%s)' % (tt_percent, ', '.join(matches))
+            tell_tales = '**Tell-tales:** {}% match ({})'.format(
+                tt_percent,
+                ', '.join(matches)
+                )
 
     # now scan for text matches
     l = len(text)
@@ -270,7 +340,7 @@ def scan_report(text, req_file, path, aid, author, upload_time, related, min_len
             if match.size >= min_length:
                 n += match.size
                 if epolm > 0:
-                    matching_text += BLUE_ELLIPSIS % (match.a - epolm)
+                    matching_text += BLUE_ELLIPSIS.format(match.a - epolm)
                 epolm = match.a + match.size
                 matching_text += text[match.a:match.a + match.size].decode('utf-8')
         # NOTE: matches that are (only a few characters) longer than an ingnorable string
@@ -288,9 +358,15 @@ def scan_report(text, req_file, path, aid, author, upload_time, related, min_len
             matching_text = '_(matching text and tell-tales omitted because source is legitimate)_'
             tell_tales = ''
         percentage = int(100 * n / l) if l else 0
-        report = ('####%d%% text match (%d characters) with `%s` <small>(submitted on %s by %s as `%s`)</small>\n'
-            % (percentage, n, req_file, upload_time, author,
-               os.path.basename(path))) + '<small>' + matching_text + '</small>'
+        report = ('####{}% text match ({} characters) with `{}` '
+                  + '<small>(submitted on {} by {} as `{}`)</small>\n').format(
+            percentage,
+            n,
+            req_file,
+            upload_time,
+            author,
+            os.path.basename(path)
+            ) + '<small>' + matching_text + '</small>'
         # append "tell-tale" report if matching tell-tales were found
         if tt_percent > 0:
             report += tell_tales
@@ -301,14 +377,27 @@ def scan_report(text, req_file, path, aid, author, upload_time, related, min_len
             # return 0 as percentage, as this match is not to be considered as plagiarism
             percentage = 0
     else:
-        report = 'NO text match with `%s` (%s)' % (os.path.basename(path), author)
+        report = 'NO text match with `{}` ({})'.format(
+            os.path.basename(path),
+            author
+            )
         if related:
             report += ' _(NOTE: despite being **related** work!)_  '
 
     # only log suspect scans
-    if ((percentage > SUSPICION_THRESHOLD or n > 500) and not related) or percentage >= 80:
-        log_message('-- %d%% (%d characters) match with %s submitted on %s by %s (#%d)'
-            % (percentage, n, req_file, upload_time, author, aid))
+    if percentage >= 80 or (
+        (percentage > SUSPICION_THRESHOLD or n > 500)
+        and not related
+        ):
+        log_message(
+            '-- {}% ({} characters) match with {} submitted on {} by {} (#{})'.format(
+                percentage,
+                n,
+                req_file,
+                upload_time,
+                author,
+                aid)
+            )
     # indicate matches with related work as a negative percentage
     if related:
         percentage = -percentage   
@@ -327,22 +416,31 @@ def scan_assignment(aid):
     if a.time_uploaded == DEFAULT_DATE or a.clone_of:
         return (0, '')
     upl_dir = os.path.join(settings.MEDIA_ROOT, a.participant.upload_dir)
-    # directory may not exist yet (typically because relay template has no required files)
+    # Directory may not exist yet (when relay template has no required files).
     if not os.path.exists(upl_dir):
         os.mkdir(upl_dir)
-    # prepare to use two text files: one for progress and draft report, one for complete report        
-    report_path = os.path.join(upl_dir, 'scan_%s%d.txt' % (a.case.letter, a.leg.number))
-    progress_path = os.path.join(upl_dir, 'progress_%s%d.txt' % (a.case.letter, a.leg.number))
+    # Prepare to use two text files: one for progress and draft report, and
+    # one for complete report.
+    acl = a.case.letter + str(a.leg.number)
+    report_path = os.path.join(upl_dir, 'scan_{}.txt'.format(acl))
+    progress_path = os.path.join(upl_dir, 'progress_{}.txt'.format(acl))
 
-    # if database record shows completed scan, check if report exists
+    # If database record shows completed scan, check whether report exists.
     if a.time_scanned != DEFAULT_DATE:
-        # if report indeed exists, read it, get the max. percentage, and return its contents
+        # If report exists, read it, get the max. percentage,
+        # and return its contents
         if os.path.isfile(report_path):
             content = unicode(open(report_path, 'r').read(), errors='ignore')
-            return (a.scan_result, markdown(content).replace('<h2>',
-                '<h2 style="color: %s">' % status_color(a.scan_result), 1))
+            return (
+                a.scan_result,
+                markdown(content).replace(
+                    '<h2>',
+                    '<h2 style="color: {}">'.format(status_color(a.scan_result)),
+                    1
+                    )
+                )
 
-    # if progress file exists, resume the scan
+    # If progress file exists, resume the scan.
     resuming = False
     if os.path.isfile(progress_path):
         try:
@@ -351,8 +449,12 @@ def scan_assignment(aid):
             t_diff = round(time.time() - data['start'])
             # first verify that assignment IDs match
             if data['aid'] != a.id:
-                log_message('ERROR: Resuming scan ID mismatch (got #%d while expecting #%d)' % (
-                    data['aid'], a.id))
+                log_message(
+                    'ERROR: Resuming scan ID mismatch (got #{} while expecting #{})'.format(
+                        data['aid'],
+                        a.id
+                        )
+                    )
             # resume only if partial scan is less than 15 minutes old AND not busy
             elif t_diff < 900 and not ('busy' in data):
                 # restore "legitimate source" ID list from data
@@ -374,17 +476,29 @@ def scan_assignment(aid):
                         'author': sa.participant.student.dummy_name(), 'uploaded': sa.time_uploaded}
                 # get the IDs of file uploads already scanned
                 spuid_list = data['spuids']
-                log_message('Resuming scan of #%d by %s (%d seconds ago; %d scanned)' % (
-                    data['aid'], data['author'], t_diff, len(spuid_list)))
+                log_message(
+                    'Resuming scan of #{} by {} ({} seconds ago; {} scanned)'.format(
+                        data['aid'],
+                        data['author'],
+                        t_diff,
+                        len(spuid_list)
+                        )
+                    )
                 # NOTE: set resuming to TRUE to indicate successful resume
                 resuming = True
             else:
-                log_message('ABANDONED scan of #%d by %s (%d seconds ago)' % (a.id, author, t_diff))
-        except Exception, e:
+                log_message(
+                    'ABANDONED scan of #{} by {} ({} seconds ago)'.format(
+                        a.id,
+                        author,
+                        t_diff
+                        )
+                    )
+        except Exception as e:
             # log error and then ignore it
-            log_message('WARNING: Ignoring resume failure: %s' % str(e))
+            log_message('WARNING: Ignoring resume failure: ' + str(e))
     else:
-        log_message('Starting scan of #%d by %s' % (a.id, author))
+        log_message('Starting scan of #{} by {}'.format(a.id, author))
 
     # if no progress file OR unsuccessful resume, start from scratch
     if not resuming:
@@ -396,8 +510,11 @@ def scan_assignment(aid):
         # (1) get ALL assignments for same case submitted (until now) by same participant
         #     because it can occur that participants are assigned the same case in several steps
         #     and then decide to reuse their own prior material
-        o_set = Assignment.objects.filter(participant=a.participant, case__letter=a.case.letter
-            ).filter(time_uploaded__lte=a.time_uploaded)
+        o_set = Assignment.objects.filter(
+            participant=a.participant,
+            case__letter=a.case.letter,
+            time_uploaded__lte=a.time_uploaded
+            )
         # (2) for these assignments, get the consecutive predecessors up to step 1,
         #     tracing cloned work to its original
         prid_list = []
@@ -411,20 +528,26 @@ def scan_assignment(aid):
                 pr_a = pr_a.predecessor
         # (3) also get all clones of these assignments
         c_list = Assignment.objects.filter(clone_of__in=prid_list).values_list('id', flat=True)
-        preds_and_clones = '-- predecessor IDs: %s; clone IDs: %s' % (
-            ', '.join([str(i) for i in prid_list]), ', '.join([str(i) for i in list(c_list)]))
+        preds_and_clones = '-- predecessor IDs: {}; clone IDs: {}'.format(
+            ', '.join([str(i) for i in prid_list]),
+            ', '.join([str(i) for i in list(c_list)])
+            )
         log_message(preds_and_clones)
         prid_list += c_list
         # (4) keep collecting IDs of successor assignments and clones of the "predecessors" found
         #     (one generation at a time) until no more are found
         n_set = set()
-        o_set = set(Assignment.objects.filter(Q(predecessor__in=prid_list) | Q(clone_of__in=prid_list)
+        o_set = set(Assignment.objects.filter(
+            Q(predecessor__in=prid_list) | Q(clone_of__in=prid_list)
             ).values_list('id', flat=True)) - n_set
         while o_set:
             n_set = n_set | o_set
-            o_set = set(Assignment.objects.filter(Q(predecessor__in=o_set) | Q(clone_of__in=o_set)
+            o_set = set(Assignment.objects.filter(
+                Q(predecessor__in=o_set) | Q(clone_of__in=o_set)
                 ).values_list('id', flat=True)) - n_set
-        offspring = '-- offspring IDs: %s' % ', '.join([str(i) for i in sorted(list(n_set))])
+        offspring = '-- offspring IDs: ' + ', '.join(
+            [str(i) for i in sorted(list(n_set))]
+            )
         log_message(offspring)
         prid_list = list(set(prid_list) | n_set)
 
@@ -434,7 +557,10 @@ def scan_assignment(aid):
         # next, determine "strings to ignore" when comparing texts
         # (1) ignore case name and mandatory section titles (if any)
         to_ignore = [a.case.name]
-        for l in EstafetteLeg.objects.filter(template=a.leg.template, number__lte=a.leg.number):
+        for l in EstafetteLeg.objects.filter(
+            template=a.leg.template,
+            number__lte=a.leg.number
+            ):
             lt = l.required_section_title
             if lt:
                 to_ignore.append(lt)
@@ -446,7 +572,7 @@ def scan_assignment(aid):
         for t in strip_tags(' '.join(a.case.description.split('&nbsp;'))).split('.'):
             st = t.strip()
             # only retain fragments of substantial length (as text is also split at abbreviations!)
-            if len(st) > 20:
+            if len(st) > 5:
                 to_ignore.append(st)
 
         # add "strings to ignore" to the data dict
@@ -463,12 +589,19 @@ def scan_assignment(aid):
         # same course estafette) and store them (relevant attributes only) in a dictionary
         # NOTE: also scan participant's own earlier work to detect (permitted) auto-plagiarism
         sa_dict = {}
-        for sa in Assignment.objects.exclude(time_uploaded__gte=a.time_uploaded
-            ).filter(leg__number__lte=a.leg.number, case=a.case,
-                     participant__estafette=a.participant.estafette
+        for sa in Assignment.objects.exclude(
+            time_uploaded__gte=a.time_uploaded
+            ).filter(
+            leg__number__lte=a.leg.number,
+            case=a.case,
+            participant__estafette=a.participant.estafette
             ).select_related('participant__student'):
-            sa_dict[sa.id] = {'id': sa.id, 'leg': sa.leg.number,
-                'author': sa.participant.student.dummy_name(), 'uploaded': sa.time_uploaded}
+            sa_dict[sa.id] = {
+                'id': sa.id,
+                'leg': sa.leg.number,
+                'author': sa.participant.student.dummy_name(),
+                'uploaded': sa.time_uploaded
+                }
         # make a list of all IDs of assignments to be scanned
         said_list = sa_dict.keys()
 
@@ -488,19 +621,28 @@ def scan_assignment(aid):
     fl = a.leg.file_list()
     for f in fl:
         # only scan DOCX, XLSX and PDF files
-        if not ('.docx' in f['types'] or '.xlsx' in f['types'] or '.pdf' in f['types']):
-            log_message('Skipping file list item %s(%s)' % (f['name'], f['types']))
+        if not (
+            '.docx' in f['types']
+            or '.xlsx' in f['types']
+            or '.pdf' in f['types']
+            ):
+            log_message(
+                'Skipping file list item {}({})'.format(f['name'], f['types'])
+                )
             continue
         # find the corresponding upload for the assignment being scanned
         pul = ParticipantUpload.objects.filter(assignment=a, file_name=f['name'])
         if pul:
-            file1 = '%s_%s%d' % (f['name'], a.case.letter, a.leg.number)
+            file1 = '{}_{}{}'.format(f['name'], a.case.letter, a.leg.number)
             pu = pul.first()
             path1 = os.path.join(upl_dir, os.path.basename(pu.upload_file.name))
             text1 = ascii_from_doc(path1, to_ignore)
             # get uploads for all relevant assignments
-            u_list = ParticipantUpload.objects.filter(assignment__id__in=said_list,
-                file_name=f['name']).exclude(id__in=spuid_list
+            u_list = ParticipantUpload.objects.filter(
+                assignment__id__in=said_list,
+                file_name=f['name']
+                ).exclude(
+                id__in=spuid_list
                 ).values('id', 'assignment__id', 'upload_file')
             # scan all uploads, compile the reports in a list, and find highest matching percentage 
             for u in u_list:
@@ -518,13 +660,22 @@ def scan_assignment(aid):
                     path2 = settings.LEADING_SLASH + u['upload_file']
                 else:
                     path2 = os.path.join(settings.MEDIA_ROOT, u['upload_file'])
-                file2 = '%s_%s%d' % (f['name'], a.case.letter, sa['leg'])
-                # NOTE: the author's participant ID will allow identification by dummy_name(),
-                #       the upload time is relevant info for the report, and the scanner should know
-                #       whether the assignment is some predecessor, or offspring thereof
-                p, r = scan_report(text1, file2, path2, u['assignment__id'], sa['author'],
-                    sa['uploaded'].strftime('%Y-%m-%d %H:%M'),
-                    u['assignment__id'] in prid_list, MATCH_THRESHOLD, to_ignore)
+                file2 = '{}_{}{}'.format(f['name'], a.case.letter, sa['leg'])
+                # NOTE: The author's participant ID will allow identification
+                #       by dummy_name(), the upload time is relevant info for
+                #       the report, and the scanner should know whether the
+                #       assignment is some predecessor, or offspring thereof.
+                p, r = scan_report(
+                    text1,
+                    file2,
+                    path2,
+                    u['assignment__id'],
+                    sa['author'],
+                    sa['uploaded'].strftime(SHORT_DATE_TIME),
+                    u['assignment__id'] in prid_list,
+                    MATCH_THRESHOLD,
+                    to_ignore
+                    )
                 fsr.append(r)
                 # keep track of high AND low values (the latter indicating a match with RELATED work)
                 max_perc = max(p, max_perc)
@@ -543,44 +694,63 @@ def scan_assignment(aid):
     #       replaced by a space to avoid sticking words together    
 
     if scan_complete:
-        # report the results
+        # Report the results.
         t_diff = time.time() - start_time
-        log_message('%d%% match; %d%% with related work (%d files scanned; %4.3f seconds)'
-            % (max_perc, abs(min_perc), fs_cnt, t_diff))
-        fsr.append('_SCAN COMPLETED: %d files scanned. Scan took %4.3f seconds._'
-            % (fs_cnt, t_diff))
-        # write result to file in Markdown format
-        content = ('##%d%% \n_Scanned on %s_\n\n' % (max_perc,
-            timezone.now().strftime('%Y-%m-%d %H:%M'))) + '\n\n'.join(fsr)
+        stats = '{} files scanned; scan took {:4.3f} seconds.'.format(
+            fs_cnt, t_diff
+            )
+        log_message(
+            '{}% match; {}% with related work ({})'.format(
+                max_perc, abs(min_perc), stats
+                )
+            )
+        fsr.append('_SCAN COMPLETED: {}_'.format(stats))
+        # Write result to file in Markdown format.
+        content = ('##{}% \n_Scanned on {}_\n\n'.format(
+            max_perc,
+            timezone.now().strftime(SHORT_DATE_TIME)
+            )) + '\n\n'.join(fsr)
         with open(report_path, 'wb') as text_file:
             text_file.write(content.encode('utf-8'))
-        # update time scanned attribute of assignment
+        # Update time scanned attribute of assignment.
         a.time_scanned = timezone.now()
-        # print "MIN = %d; MAX = %d" % (min_perc, max_perc)
-        # NOTE: if 5% or more overlap, or more unrelated overlap than related overlap,
-        #       show this percentage
+        # NOTE: If 5% or more overlap, or more unrelated overlap than related
+        #       overlap, show this percentage.
         if max_perc >= 5 or max_perc > abs(min_perc):
             a.scan_result = max_perc
         else:
             a.scan_result = min_perc
         a.save()
-        # remove the progress file
+        # Remove the progress file.
         try:
             os.remove(progress_path)
         except:
             pass
         # style the first header to make it display in the appropriate status color 
-        content = markdown(content).replace('<h2>',
-            '<h2 style="color: %s">' % status_color(max_perc), 1)
+        content = markdown(content).replace(
+            '<h2>',
+            '<h2 style="color: {}">'.format(status_color(max_perc)),
+            1
+            )
         # return tuple with max report in HTML format
         return (max_perc, content)
     else:
         # report the incomplete scan
         t_diff = time.time() - start_time
-        log_message('INCOMPLETE scan -- %d%% match; %d%% with related work (%d files scanned; %4.3f seconds)'
-            % (max_perc, abs(min_perc), fs_cnt, t_diff))
-        fsr.append('_Scan still partial -- %d files scanned. Scan took %4.3f seconds._'
-            % (fs_cnt, t_diff))
+        log_message(
+            'INCOMPLETE scan -- {}% match; {}% with related work ({} files scanned; {:4.3f} seconds)'.format(
+                max_perc,
+                abs(min_perc),
+                fs_cnt,
+                t_diff
+                )
+            )
+        fsr.append(
+            '_Scan still partial -- {} files scanned. Scan took {:4.3f} seconds._'.format(
+                fs_cnt,
+                t_diff
+                )
+            )
         # add the report to the data dict
         data['author'] = author
         data['min_perc'] = min_perc
@@ -595,26 +765,48 @@ def scan_assignment(aid):
         # overwrite the provisionary progress file
         with open(progress_path, 'w') as f:
             f.write(dumps(data))
-        return (max_perc, '<p><em>Scan still incomplete (%d checked)</em></p>' % fs_cnt)
+        return (
+            max_perc,
+            '<p><em>Scan still incomplete ({} checked)</em></p>'.format(fs_cnt)
+            )
 
-# looks for some yet unscanned assignment and scans it
-# NOTE: as scanning may take several seconds, this function is not called when a student
-#       uploads (as this may itself take time, and the user may become anxious);
-#       instead, it is called when user performs any action except 'upload'
 def scan_one_assignment():
-# NOTE: the two lines below show how to clear scan results for a specific repaly
-#    Assignment.objects.filter(participant__estafette__id=27, leg__number=1).update(
-#        time_scanned=DEFAULT_DATE, scan_result=0)
+    """
+    Look for one assignment that still needs scanning, and scan it.
+    """
+
+    """
+    NOTE: The three lines below show how to clear scan results for a specific relay:
+    
+    log_message('Clearing scans of step STEP for course relay #ID')
+    Assignment.objects.filter(
+        participant__estafette__id=ID,
+        leg__number=STEP
+        ).update(
+        time_scanned=DEFAULT_DATE,
+        scan_result=0
+        )
+
+    Modify and then uncomment these lines ONLY IF you want to scan all over.
+    """
     try:
-        a = Assignment.objects.exclude(time_uploaded__lte=DEFAULT_DATE
-            ).filter(time_scanned__lte=DEFAULT_DATE, clone_of=None,
-                participant__student__dummy_index=0
+        # Specify where to start:
+        id_of_first_relay_to_scan = 43
+
+        a = Assignment.objects.exclude(
+            time_uploaded__lte=DEFAULT_DATE
+            ).filter(
+            time_scanned__lte=DEFAULT_DATE,
+            clone_of=None,
+            # participant__student__dummy_index=0, # optional!
+            participant__estafette__id__gt=id_of_first_relay_to_scan
             ).values_list('id', flat=True)[:1]
         if a:
+            log_message('Single scan: ' + unicode(a))
             scan_assignment(a[0])
-    except Exception, e:
+    except Exception as e:
         # catch errors to log them (should not be visible to participant)
-        log_message('ERROR during single scan: %s' % str(e))
+        log_message('ERROR during single scan: ' + str(e))
 
 
 # scans up to N assignments
@@ -623,19 +815,19 @@ def scan_N_assignments(n):
     a = Assignment.objects.exclude(time_uploaded__lte=DEFAULT_DATE
         ).filter(time_scanned__lte=DEFAULT_DATE, clone_of=None
         ).values_list('id', flat=True)
-    print "%d assignments still need scanning" % a.count()
+    log_message('{} assignments still need scanning'.format(a.count()))
     if a:
         n = min(n, a.count())
     else:
-        print "No scan needed"
+        log_message('No scan needed')
         return
     i = 0
     while i < n:
         i += 1;
-        print "Scanning #%d of %d" % (i, n)
+        log_message('Scanning #{} of {}'.format(i, n))
         try:
             scan_assignment(a[i-1])
-        except Exception, e:
+        except Exception as e:
             # catch errors to log them (should not be visible to participant)
-            log_message('ERROR during single scan: %s' % str(e))
+            log_message('ERROR during single scan: ' + str(e))
 

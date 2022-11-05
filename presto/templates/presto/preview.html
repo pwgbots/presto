@@ -1,0 +1,510 @@
+{% extends "./base-with-menus.html" %}
+{% comment %}
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+{% endcomment %}
+
+{% load static %}
+{% load presto_filters %}
+
+{% block headlines %}
+  <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
+  <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
+{% endblock headlines %}
+
+{% block component_inits %}
+  $('.ui.rating').rating();
+
+  $('#rev-rat').rating('setting', 'onRate', function(value) {
+    {% if task.rejectable %}
+      if (value == 1) {
+        $('#rej-txt').show();
+        $('#rej-btn').show();
+      } else {
+        $('#rej-txt').hide();
+        $('#rej-btn').hide();
+      }
+    {% endif %}
+  });
+
+{% endblock component_inits %}
+
+{% block javascripts %}
+
+function toggleCommit() {
+  var btn = $('#commit-btn'), lbl = $('#commit-lbl');
+  if (btn.hasClass('disabled')) {
+    btn.removeClass('disabled');
+    lbl.css('font-weight', 'bold');
+  } else {
+    btn.addClass('disabled');
+    lbl.css('font-weight', 'normal');
+  }
+}
+
+function showReviewInstructions() {
+  $('#rev-instr').show();
+  $('#show-instr-btn').hide();
+  $('#hide-instr-btn').show();
+}
+
+function hideReviewInstructions() {
+  $('#rev-instr').hide();
+  $('#hide-instr-btn').hide();
+  $('#show-instr-btn').show();
+}
+
+function enableProceed() {
+  $('#proceed-btn').removeClass('disabled');
+}
+
+{% endblock javascripts %}
+
+{% block page_content %}
+
+{# this page allows the user to preview the successive step-tasks of a relay template    #}
+{# NOTE: the user can click on the progress bar to view a particular step-task, or click #}
+{#       on the "go to the next task" button (e.g., Proceed, or Submit) to see the next. #}
+  
+{# show the name of the relay template #}
+<h2 class="ui header" lang="en-US">
+  <i class="circular flag outline icon"></i>
+  <div class="content">
+    <em>Template preview:</em> {{ object.name|safe }}
+  </div>
+</h2>
+
+{# display relay properties, progress bar, progress chart, and info button #}
+<div class="ui segments" lang="en-US">
+  <div class="ui segment">
+    <div class="ui grid">
+      <div class="twelve wide column">
+        <p>
+          {{ edits }}
+        </p>
+        <div class="ui large black ribbon label">
+          <span style="font-size: larger; text-shadow: 1px 0px black; margin-left: 1em">
+            {% with object.nr_of_legs as nol %}
+              This relay comprises {{ nol }} step{% if nol != 1 %}s{% endif %}
+            {% endwith %}
+          </span>
+        </div>
+        {# progress bar #}
+        <div class="ui basic segment" style="white-space: nowrap; padding: 0">
+          <div style="display: inline-block; background: rgb(245,245,245); white-space: nowrap; padding: 4px; border: 1px solid rgb(235,235,235); border-radius: 4px 0 0 4px; height: 2.2em">  
+            <a class="ui olive circular label" data-tooltip="Commit to rules and start"
+                 data-inverted="" href="./template/preview/0/c/{{ hex }}">&#9654;</a>
+            {% for l in legs %}
+              {% if l.number > 1 %}
+                <a class="ui mini olive circular label" data-tooltip="Proceed to next step"
+                   data-inverted="" style="min-width: 10.34px; min-height: 10.34px"
+                   href="./template/preview/{{ l.number }}/p/{{ hex }}"></a>
+                <a class="ui mini blue circular label" data-tooltip="Download predecessor's work"
+                   data-inverted="" style="min-width: 10.34px; min-height: 10.34px"
+                   href="./template/preview/{{ l.number }}/d/{{ hex }}"></a>
+                <a class="ui mini orange circular label" data-tooltip="Review predecessor's work"
+                   data-inverted="" style="min-width: 10.34px; min-height: 10.34px"
+                   href="./template/preview/{{ l.number }}/r/{{ hex }}"></a>
+              {% endif %}
+              <a class="ui purple circular label" data-tooltip="Submit {{ l.name }}"
+                   data-inverted=""
+                   href="./template/preview/{{ l.number }}/s/{{ hex }}">{{ l.number }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </div> {# end of twelve wide column DIV #}
+      <div class="four wide column">
+        <div style="margin:0.5em; background-color:silver;text-align:center;width:100%; height: 100%">
+          <em>(progress chart)</em>
+        </div>
+      </div>
+    </div>
+  </div>
+{% if task.type == 'START' %}
+  <div class="ui segment">
+    {{ task.rules|safe }}
+    <div style="margin-bottom: 1em">
+      <div class="ui checkbox">
+        <input type="checkbox" onclick="toggleCommit();">
+        <label id="commit-lbl">{{ lang|phrase:'Commit_to_rules' }}</label>
+      </div>
+    </div>
+    <a id="commit-btn" class="ui disabled primary labeled icon button"
+       href="./template/preview/1/p/{{ hex }}">
+      <i class="play icon"></i>
+      Start
+    </a>    
+  </div>
+{% elif task.type == 'PROCEED' %}
+  <div class="ui olive inverted segment">
+    <div class="ui header">
+      <i class="arrow circle right icon"></i>
+      <div class="content">
+        {{ task.header|safe }}
+      </div>
+    </div>
+  </div>
+  <div class="ui segment">
+    <h2 class="ui small header">
+      {{ task.steps_to_go }}
+    </h2>
+  </div>
+  <div class="ui tertiary clearing segment">
+    <a class="ui left floated olive labeled icon button" style="margin-right: 1em"
+       href="./template/preview/{{ next_step }}/{% if next_step == 1 %}s{% else %}d{% endif %}/{{ hex }}">
+      <i class="arrow circle right icon"></i>
+      {{ task.task }}
+    </a>
+    <span>{{ lang|phrase:'Only_when_you_can'|safe }}</span>
+  </div>
+{% elif task.type == 'DOWNLOAD' %}  
+  <div class="ui blue inverted segment">
+    <div class="ui header">
+      <i class="download icon"></i>
+      <div class="content">
+        {{ task.header|safe }}
+      </div>
+    </div>
+  </div>
+  <div class="ui segment">
+    <div class="ui top attached secondary segment">
+      <strong>(case title)</strong>
+    </div>
+    <div class="ui bottom attached segment">
+      <em>(case description)</em>
+    </div>
+  </div>
+  <div class="ui segment">
+    <h2 class="ui small header">
+      {{ lang|phrase:'Predecessor_task' }}
+    </h2>
+    {{ task.desc|safe }}
+  </div>
+  <div class="ui blue segment">
+    <div class="ui compact stackable inverted blue menu">
+      <div class="header item">
+        {{ lang|phrase:'View_pred_work' }}:
+      </div>
+      {% for f in task.file_list %}
+        <a class="item" onclick="enableProceed();">
+          {{ f.prompt }}
+        </a>
+      {% endfor %}
+      {% if task.file_list|length > 1 %}
+        <a class="item" onclick="enableProceed();">
+          <i class="file archive outline icon"></i>
+          {{ lang|phrase:'Download_all' }}
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="ui tertiary clearing segment">
+    <a id="proceed-btn" href="./template/preview/{{ next_step }}/r/{{ hex }}"
+       class="ui disabled left floated blue labeled icon button" style="margin-right: 1em">
+      <i class="arrow circle right icon"></i>
+      {{ lang|phrase:'Proceed' }}
+    </a>
+    <span>{{ lang|phrase:'Download_first'|safe }}</span>
+  </div>
+{% elif task.type == 'REVIEW' %}
+  <div class="ui orange inverted segment">
+    <div class="ui header">
+      <i class="star outline icon"></i>
+      <div class="content">
+        {{ task.header|safe }}
+      </div>
+    </div>
+  </div>
+  <div class="ui segment">
+    <div class="ui top attached secondary segment">
+      <strong>(case title)</strong>
+    </div>
+    <div class="ui bottom attached segment">
+      <em>(case description)</em>
+    </div>
+  </div>
+  <div class="ui segment">
+    <h2 class="ui small header">
+      {{ lang|phrase:'Predecessor_task' }}
+    </h2>
+    {{ task.desc|safe }}
+    {% if task.file_list %}
+    <div class="ui compact stackable orange inverted menu">
+      <div class="header item">
+        {{ lang|phrase:'View_pred_work' }}:
+      </div>
+      {% for f in task.file_list %}
+        <a class="item">
+          {{ f.prompt }}
+        </a>
+      {% endfor %}
+      {% if task.file_list|length > 1 %}
+        <a class="item">
+          <i class="file archive outline icon"></i>
+          {{ lang|phrase:'Download_all' }}
+        </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="ui orange segment">
+    <div class="ui small header">
+      {{ lang|phrase:'Review_work' }}
+    </div>
+    <form style="margin-top: 1em">
+      <div class="ui form" >
+        <div class="field">
+          <div style="font-size:large; font-style: italic">
+            {{ lang|phrase:'Your_feedback' }}
+          </div>
+          {% for ri in task.rev_items %}
+          <div class="ui orange segment">
+            <div class="ui grid">
+              <div class="thirteen wide column">
+                <div><strong>{{ ri.item.number }}. {{ ri.item.name }}</strong></div>
+                <div style="font-size: inherit; margin-bottom: 0.5em">
+                  {{ ri.item.instruction|safe }}
+                </div>
+                {% if ri.no_comment %}
+                  <em>{{ lang|phrase:'No_comment_needed' }}</em>
+                {% else %}
+                  <div id="view-rev-cmnt-{{ ri.item.number }}"
+                       class="ui secondary segment"
+                       style="margin-top: 0; margin-bottom: 0.5em">
+                    {{ ri.comment|safe }}
+                  </div>
+                  {% if ri.min_words > 0 %}
+                    <div class="ui basic clearing segment" style="margin: -1em -1em">
+                      <div class="ui black horizontal label">0</div>
+                      &larr;
+                      <em>
+                        {{ lang|phrase:'Wordcount_left' }}
+                        <span>
+                          {{ ri.min_words }}
+                        </span>
+                        {{ lang|phrase:'Wordcount_right' }}
+                      </em>
+                    </div>
+                  {% endif %}
+                {% endif %}
+              </div>
+              <div class="three wide column">
+                <div class="ui center aligned basic segment">
+                  <div id="rev-itap-{{ ri.item.number }}"
+                       style="margin-bottom: 0.5em">
+                    {# to be filled with ITAP #}
+                  </div>
+                  <div id="edit-btn-rev-cmnt-{{ ri.item.number }}">
+                    <div class="ui mini basic orange icon button">
+                      <i class="edit icon"></i>
+                      {{ lang|phrase:'Edit' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          <div class="ui orange segment">
+           <div class="ui grid">
+            <div class="sixteen wide column">
+              {% if task.rev_items|length > 0 %}
+                <div style="margin-bottom: 0.5em">
+                  <strong>{{ lang|phrase:'Overall_review' }}</strong>
+                </div>
+              {% endif %}
+              {{ task.instr|safe }}
+              <div id="view-rev"
+                   class="ui secondary segment"
+                   style="margin-top: 0; margin-bottom: 0.5em">
+                <em>(...)</em>
+              </div>
+              {% if task.min_words > 0 %}
+                <div class="ui basic clearing segment" style="margin: -1em -1em">
+                  <div class="ui black horizontal label">0</div>
+                  &larr;
+                  <em>
+                    {{ lang|phrase:'Wordcount_left' }}
+                    <span>{{ task.min_words }}</span>
+                    {{ lang|phrase:'Wordcount_right' }}
+                  </em>
+                </div>
+              {% endif %}
+            </div>
+            <div class="sixteen wide column">
+              <label><strong>{{ lang|phrase:'Your_rating' }}:</strong></label>
+              <div id="rev-rat" class="ui star rating" style="margin-right: 2em"
+                   data-rating="3" data-max-rating="5">
+              </div>
+              <div class="ui mini right floated orange basic labeled icon button">
+                <i class="edit icon"></i>
+                {{ lang|phrase:'Edit' }}
+              </div>
+              {% if task.rejectable %}
+                <div id="rej-txt" style="white-space: nowrap; margin-top: 1em; display: none">
+                  <em>{{ lang|phrase:'Rejection_rule' }}</em>
+                </div>
+              {% endif %}
+            </div>
+           </div>
+          </div>
+        </div>
+
+        <div class="ui basic clearing segment" style="margin: -1em -1em -1em -1em">
+          <a id="submit-btn" href="./template/preview/{{ next_step }}/s/{{ hex }}"
+             class="ui left floated orange labeled icon button">
+            <i class="star outline icon"></i>
+            {{ lang|phrase:'Submit_review' }}
+          </a>
+          {% if task.rejectable %}
+            <a id="rej-btn" href="./template/preview/{{ step }}/d/{{ hex }}"
+               class="ui right floated black labeled icon button" style="display: none">
+              <i class="thumbs down icon"></i>
+              {{ lang|phrase:'Reject' }}
+            </a>
+          {% endif %}
+        </div>  
+      </div>
+    </form>
+  </div>
+{% elif task.type == 'SUBMIT' %}
+  <div class="ui purple inverted segment">
+    <div class="ui header">
+      <i class="upload icon"></i>
+      <div class="content">
+        {{ task.header|safe }}
+      </div>
+    </div>
+  </div>
+  <div class="ui segment">
+    <div class="ui top attached secondary segment">
+      <strong>(case title)</strong>
+    </div>
+    <div class="ui bottom attached segment">
+      <em>(case description)</em>
+    </div>
+  </div>
+  <div class="ui segment">
+    <h2 class="ui small header">
+      {{ lang|phrase:'Your_task' }}
+    </h2>
+    {{ task.desc|safe }}
+  </div>
+  {% if task.rev_instr %}
+    <div class="ui purple secondary segment">
+      <div class="ui grid">
+        <div class="thirteen wide column">
+          {{ lang|phrase:'View_review_instructions' }}
+        </div>
+        <div class="three wide column">
+          <a id="show-instr-btn"
+             class="ui tiny purple icon button"
+             onclick="showReviewInstructions();">
+            {{ lang|phrase:'Show' }}
+            <i class="unhide icon"></i>
+          </a>
+          <a id="hide-instr-btn"
+             class="ui tiny basic purple icon button"
+             style="display: none" onclick="hideReviewInstructions();">
+            {{ lang|phrase:'Hide' }}
+            <i class="hide icon"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  <div id="rev-instr" class="ui segment" style="display: none">
+    {{ task.rev_instr|safe }}
+  </div>
+  <div class="ui purple segment">
+    <div class="ui small header">
+      {{ lang|phrase:'Submit_work' }}
+    </div>
+    {{ task.instr|safe }}
+    <form>
+      <div class="ui form">
+        {% if task.file_list %}
+          <div class="ui stackable two column grid">
+            {% for f in task.file_list %}
+              <div class="column">
+                <div class="field">
+                  <label>{{ f.prompt }}
+                    <span style="font-weight: normal">(*{{ f.types }})</span>
+                  </label>
+                  <input type="file" name="{{ f.name }}" accept="{{ f.types }}">
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <div class="ui basic clearing segment" style="margin: -1em">
+          <a href="./template/preview/{{ next_step }}/p/{{ hex }}"
+             class="ui left floated purple labeled icon button">
+            <i class="upload icon"></i>
+            {{ task.task }}
+          </a>
+        </div>
+      </div>
+    </form>
+  </div>
+  {% if step > 1 %}
+    <div class="ui tertiary orange segment">
+      <div class="ui grid">
+        <div class="six wide column">
+          <a href="./template/preview/{{ step }}/r/{{ hex }}" class="ui orange labeled icon button">
+            <i class="star outline icon"></i>
+            {{ lang|phrase:'Modify_review' }}
+          </a>
+        </div>
+        <div class="ten wide column" style="padding-top: 1.5rem">
+          <div class="ui small header">
+            <i class="pointing left icon"></i>
+            <div class="content">
+              {{ lang|phrase:'Can_still_modify' }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% elif task.type == 'FINISH' %}
+  <div class="ui teal inverted segment">
+    <div class="ui header">
+      <i class="checkered flag icon"></i>
+      <div class="content">
+        {{ lang|phrase:'Finished' }}
+      </div>
+    </div>
+  </div>
+  <div class="ui segment">
+    <div class="ui small header">
+      {{ lang|phrase:'Congratulations' }}
+    </div>
+    <p>{{ lang|phrase:'You_have_finished' }}</p>
+    <p>{{ lang|phrase:'Keep_logging_on'|safe }}</p>
+  </div>
+{% endif %}  {# test for type of task #}
+</div>
+{% endblock page_content %}

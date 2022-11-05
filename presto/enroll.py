@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -39,15 +35,20 @@ from .models import Course, CourseStudent
 from datetime import datetime
 
 # presto modules
-from presto.generic import change_role, generic_context, has_role, inform_user, is_demo_user, warn_user
-from presto.utils import decode, encode, DATE_TIME_FORMAT
+from presto.generic import (
+    change_role,
+    generic_context,
+    has_role,
+    inform_user, is_demo_user,
+    warn_user
+    )
+from presto.utils import DATE_TIME_FORMAT, decode, encode
 
 
 # view for enrollment page (for students)
 @login_required(login_url=settings.LOGIN_URL)
 def enroll(request, **kwargs):
     context = generic_context(request)
-    print context
     # check whether user can have student role
     if not change_role(context, 'Student'):
         return render(request, 'presto/forbidden.html', context)
@@ -55,26 +56,40 @@ def enroll(request, **kwargs):
     cc = kwargs.get('course', '')
     cl = Course.objects.filter(code=cc)
     if not cl:
-        warn_user(context, 'Unknown course',
-            'Course code "<tt>%s</tt>" is not recognized. Please check with your faculty staff.' % cc)            
+        warn_user(
+            context,
+            'Unknown course',
+            'Course code "<tt>{}</tt>" is not recognized.'.format(cc)
+                + 'Please check with your faculty staff.'
+            )            
     elif cl.first().is_hidden:
-        warn_user(context, 'Unknown course',
-            'Course %s is not open for enrollment.' % cl.first().title)            
+        warn_user(
+            context,
+            'Unknown course',
+            'Course {} is not open for enrollment.'.format(cl.first().title)
+            )
     else:
         c = cl.first()
         context['course'] = {
             'object': c,
             'hex': encode(c.id, context['user_session'].encoder)
-        }
+            }
         # switch to the course language
         context['lang'] = c.language
         csl = CourseStudent.objects.filter(user=context['user'], course=c)
         if csl and not (has_role(context, 'Instructor') or is_demo_user(context)):
-            warn_user(context, c.language.phrase('Already_enrolled'),
-                c.language.phrase('Enrolled_on') %
-                (c.title(), c.language.ftime(csl.first().time_enrolled)))
+            warn_user(
+                context,
+                c.language.phrase('Already_enrolled'),
+                c.language.phrase('Enrolled_on').format(
+                    course=c.title(),
+                    time=c.language.ftime(csl.first().time_enrolled)
+                    )
+                )
         else:
-            context['enroll'] = c.language.phrase('About_to_enroll') % c.title()
+            context['enroll'] = c.language.phrase('About_to_enroll').format(
+                course=c.title()
+                )
 
     context['page_title'] = 'Presto Enrollment' 
     return render(request, 'presto/enroll.html', context)

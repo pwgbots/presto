@@ -1,12 +1,11 @@
-{% extends "base-with-menus.html" %}
-
+{% extends "./base-with-menus.html" %}
 {% comment %}
 
 Software developed by Pieter W.G. Bots for the PrESTO project
 Code repository: https://github.com/pwgbots/presto
 Project wiki: http://presto.tudelft.nl/wiki
 
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -58,6 +57,15 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   margin: 0;
   width: 1em
 }
+
+blockquote {
+  border-left: 4px solid #00a6d6;
+  margin-bottom: 5px;
+  margin-top: 5px;
+  padding-left: 16px;
+  font-size: 90%;
+  background-color: #dff0ff;
+}
 {% endblock styles %}
 
 {% block component_inits %}
@@ -70,8 +78,9 @@ $('#settings-modal').modal();
 
 {% block javascripts %}
 var STEP_COLORS = ['', 'red', 'orange', 'yellow', 'olive', 'green', 'black'];
-var APPR_ICONS = ['grey help circle outline', 'smile', 'meh', 'frown', 'pointing up'];
+var APPR_ICONS = ['grey help question', 'smile', 'meh', 'frown', 'pointing up'];
 var USER_NAMES = [];
+var USER_REVIEWS = [];
 var USER_GRADES = [];
 var INCOMPLETE = [];
 var NR_OF_PARTICIPANTS = {{ participants|length }};
@@ -225,11 +234,14 @@ function showScans(hex) {
 		asc: 'sorted ascending',
 		desc: 'sorted descending',
 		compare: function(a, b) {
-            // compare numbers as such, rather than as strings
-            if (a === +a && b === +b) {
-                a = +a;
-                b = +b;
-            }
+      a = a.trim();
+      b = b.trim();
+      // compare numbers as such, rather than as strings
+      let pfa = parseFloat(a), pfb = parseFloat(b);
+      if (!Number.isNaN(pfa) && !Number.isNaN(pfb)) {
+        a = pfa;
+        b = pfb;
+      }
 			if (a > b) {
 				return 1;
 			} else if (a < b) {
@@ -253,6 +265,18 @@ function showScans(hex) {
 	};
 
 })(window.Zepto || window.jQuery);
+
+function showReviewInstructions(nr) {
+  $('#rev-instr-' + nr).show();
+  $('#show-instr-btn-' + nr).hide();
+  $('#hide-instr-btn-' + nr).show();
+}
+
+function hideReviewInstructions(nr) {
+  $('#rev-instr-' + nr).hide();
+  $('#hide-instr-btn-' + nr).hide();
+  $('#show-instr-btn-' + nr).show();
+}
 
 function showLargeImage() {
   $('#progress-chart-img').attr('src', PROGRESS_CHART_URL);
@@ -311,6 +335,7 @@ function drawHistogram(width=600, height=300) {
   if (!(validateCutoffs() && validateGradeRange() && validatePassingGrade())) return
   USER_GRADES = [];
   USER_NAMES = [];
+  USER_REVIEWS = [];
   INCOMPLETE = [];
   var tally = [[], [], [], []];
   var barcol = ['#EC7F2C', '#FFB880', '#00A6D6', '#80D0FF'];
@@ -323,19 +348,31 @@ function drawHistogram(width=600, height=300) {
       kappa = parseFloat($('#kappa').val()),
       omega = parseFloat($('#omega').val());
   var score_range = high_cutoff - low_cutoff, grade_range = omega - alpha;
-  var i, g, cs, pcnt = 0, pass_cnt = 0;
+  var i, g, cs, pcnt = 0, pass_cnt = 0, sc, tt, rev;
   for (i = 0; i < NR_OF_PARTICIPANTS; i++) {
-    g = $('#score-' + i).html();
-    cs = parseInt($('#completed-' + i).html());
-    if (!isNaN(g) && cs+1 >= {{ legs|length }}) {
+    sc = $('#score-' + i);
+    g = sc.html();
+    elig = parseInt($('#eligible-' + i).html());
+    if (!isNaN(g) && elig == 1) {
       g = Math.max(Math.min(parseFloat(g), high_cutoff), low_cutoff);
       if (as_grade) {
         g = alpha + (g - low_cutoff) * grade_range / score_range;
         if (g >= kappa) pass_cnt++;
       }
       USER_GRADES[pcnt] = g;
+      rev = 0;
+      tt = sc.attr('data-tooltip').split('+');
+      for(let j = 1; j < tt.length; j++) {
+        if(tt[j] === '1r') {
+          rev += 1.0;
+        } else if(tt[j].endsWith('r')) {
+          rev += 0.5;
+        }
+      }
+      USER_REVIEWS[pcnt] = rev;
       USER_NAMES[pcnt] = $('#user-' + i).html();
-      if (cs < {{ legs|length }}) INCOMPLETE.push(pcnt);
+      fin = parseInt($('#finished-' + i).html());
+      if (fin == 0) INCOMPLETE.push(pcnt);
       pcnt++;
     }
   }
@@ -465,7 +502,9 @@ function downloadGrades() {
   var g, i, data = '';
   for (i = 0; i < USER_GRADES.length; i++) {
     g = Math.round(10 * USER_GRADES[i]) / 10;
-    data += USER_NAMES[i] + '\t' + (INCOMPLETE.indexOf(i) < 0 ? g : '(' + g + ')') + '\r\n';
+    data += USER_NAMES[i] + '\t' + 
+        (INCOMPLETE.indexOf(i) < 0 ? g : '(' + g + ')') + '\t' +
+        USER_REVIEWS[i] + '\r\n';
   }
   var e = document.getElementById('data-saver');
   e.href = 'data:attachment/text,' + encodeURI(data);
@@ -601,11 +640,18 @@ var STATISTICS = {{ stats_json|safe }};
           </a>
         {% endif %}
       {% endif %}
+      {% if scoring_system %}
+        <div class="ui orange horizontal circular label" style="margin-left: 1em"
+             data-tooltip="{{ scoring_system }}">
+          <i class="star icon" style="margin-right: 0"></i>
+        </div>
+      {% endif %}
       <div class="sub header">
         <small>
           <span class="nbs"><em>Start time:</em> {{ start_time }}</span>
           <span class="nbs"><em>End time:</em> {{ end_time }}</span><br/>
           <span class="nbs"><em>{{ next_deadline.label}}:</em> {{ next_deadline.time }}</span>
+          {% if pending_decisions %}<br/><span class="nbs">{{ pending_decisions }}</span>{% endif %}
         </small>
       </div>
       </div>
@@ -631,7 +677,21 @@ var STATISTICS = {{ stats_json|safe }};
 {% for p in participants %}{% if not p.instructor %}
   <tr id="{{ p.hexed_id }}">
     <td onclick="showParticipant('{{ p.encoded_id }}');">
-      {{ p.name }} &nbsp;&nbsp; <span style="font-size: 10pt; cursor: pointer"
+      {{ p.name }}
+      {% if p.referee %}
+        <div class="ui tiny {% if p.appeals.undecided > 0 %}orange{% else %}yellow{% endif %} label"
+             style="color: black !important">
+          <i class="law icon"></i> {{ p.appeals.assigned }}
+        </div>
+      {% endif %}
+      {% if p.team %}
+        <div class="ui tiny white circular label"
+          style="width:2.15em{% if p.separated %}; color:#ec7f2c{% endif %}"
+          data-tooltip="{{ p.team }}">
+          <i class="users icon"></i>  
+        </div>
+      {% endif %}
+      &nbsp;&nbsp; <span style="font-size: 10pt; cursor: pointer"
         onclick="event.stopPropagation(); showScans('{{ p.encoded_id }}');">{{ p.scan_status|safe }}</span>
       <br/>
       <div class="ui small {{ p.progress_color }} horizontal label"
@@ -642,9 +702,10 @@ var STATISTICS = {{ stats_json|safe }};
     </td>
     <td class="collapsing" style="text-align: center">
       <span id="score-{{ p.nr }}" data-tooltip="{{ p.score_details|safe }}"
-            {% if p.eligible %}style="font-weight: bold; color: {% if p.completed_steps == legs|length %}green{% else %}orange{% endif %}" {% endif %}>{{ p.score }}</span>
+            {% if p.eligible %}style="font-weight: bold; color: {% if p.finished %}green{% else %}orange{% endif %}" {% endif %}>{{ p.score }}</span>
       <span id="user-{{ p.nr }}" hidden="hidden">{{ p.username }}</span>
-      <span id="completed-{{ p.nr }}" hidden="hidden">{{ p.completed_steps }}</span>
+      <span id="eligible-{{ p.nr }}" hidden="hidden">{{ p.eligible }}</span>
+      <span id="finished-{{ p.nr }}" hidden="hidden">{{ p.finished }}</span>
     </td>
     <td class="collapsing">
       {% for s in p.steps %}
@@ -652,12 +713,12 @@ var STATISTICS = {{ stats_json|safe }};
           <a data-tooltip="{{ r.reviewer_popup|safe }}" href="javascript:;"
              onclick="document.location.hash='{{ r.reviewer_hex }}';"
              class="ui small {{ r.color }} horizontal circular label"
-             style="margin-right:0{{ r.shadow }}">{% if r.final_review_index or r.by_instructor %}<span style="color:black{% if r.by_instructor %};text-decoration: overline{% endif %}">{{ r.letter }}</span>{% else %}{{ r.letter }}{% endif %}</a>
+             style="margin-right:0{{ r.shadow }}{{ s.hasty_work }}">{% if r.final_review_index or r.by_instructor %}<span style="color:black{% if r.by_instructor %};text-decoration: overline{% endif %}">{{ r.letter }}{{ r.improvement|safe }}</span>{% else %}{{ r.letter }}{{ r.improvement|safe }}{% endif %}</a>
         {% endfor %}
         {% for r in s.expected_reviews %}
           <div data-tooltip="{{ s.assignment.time_assigned|date:'D d M Y' }} {{ s.assignment.time_assigned|time:'H:i' }}"
                class="ui small white horizontal circular label"
-               style="margin-right:0; color:white">{{ s.letter }}</div>
+               style="margin-right:0; color:white{{ s.hasty_work }}">{{ s.letter }}</div>
         {% endfor %}
       {% endfor %}
       {% for s in p.rblanks %}
@@ -667,10 +728,11 @@ var STATISTICS = {{ stats_json|safe }};
       <br/>
       {% for s in p.steps %}
         {% for r in s.received_reviews %}
-          <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon" style="width:1.17em"></i></div>
+          <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon"
+               style="{% if r.objection %}width:1.6em !important;height: 1.6em !important;padding: 4px 0 !important;{% if r.pending %}box-shadow: 0em 0em 0em 0.15em {{ r.pending }} inset;{% endif %}{% else %}width:1.17em{% endif %}"></i></div>
         {% endfor %}
         {% for r in s.expected_reviews %}
-          <div data-tooltip="nothing to appraise" class="apic"><i class="inverted grey help circle outline icon" style="width:1.17em"></i></div>
+          <div data-tooltip="nothing to appraise" class="apic"><i class="inverted grey question circle outline icon" style="width:1.17em"></i></div>
         {% endfor %}
       {% endfor %}
     </td>
@@ -679,26 +741,33 @@ var STATISTICS = {{ stats_json|safe }};
         <a data-tooltip="{{ s.given_review.receiver_popup|safe }}" href="javascript:;"
            onclick="document.location.hash='{{ s.given_review.receiver_hex }}';"
            class="ui small {{ s.given_review.color }} {% if s.clone %}basic {% endif %}horizontal circular label"
-           style="margin-right:0{{ s.given_review.shadow }}{% if s.self_review %};font-style:italic;font-weight:900{% endif %}">{{ s.letter }}</a>
+           style="margin-right:0{{ s.given_review.shadow }}{% if s.self_review %};font-style:italic;font-weight:900{% endif %}">{{ s.letter }}{{ s.given_review.improvement|safe }}</a>
       {% endif %}{% endfor %}
       {% for r in p.given_final_reviews %}
         <a data-tooltip="{{ r.receiver_popup|safe }}" href="javascript:;"
            onclick="document.location.hash='{{ r.receiver_hex }}';"
            class="ui small {{ r.color }} horizontal circular label"
-           style="margin-right:0{{ r.shadow }}"><span style="color: black">{{ r.letter }}</span></a>
+           style="margin-right:0{{ r.shadow }}"><span style="color: black">{{ r.letter }}{{ r.improvement|safe }}</span></a>
       {% endfor %}
       {% for s in p.gblanks %}
         <div class="ui small white horizontal basic circular label"
              style="margin-right:0; color:white">?</div>
       {% endfor %}
+      {% if p.rejects %}
+        <div class="ui small black horizontal circular label"
+             data-tooltip="Rejected:{% for ra in p.rejects %} {{ ra }}{% endfor %}"
+             style="margin-left:0.5em; color:white">+{{ p.rejects|length }}R</div>
+      {% endif %}
         <br/>
       {% for s in p.steps %}{% if s.given_review %}
         <div data-tooltip="{{ s.given_review.status|safe }}"
              class="apic"><i class="{{ s.given_review.icon_color }} {{ s.given_review.icon }} icon"
-             style="width:1.17em"></i></div>
+             style="{% if s.given_review.objection %}width:1.6em !important;height: 1.6em !important;padding: 4px 0 !important;{% if s.given_review.pending %}box-shadow: 0em 0em 0em 0.15em {{ s.given_review.pending }} inset;{% endif %}{% else %}width:1.17em{% endif %}">
+             </i></div>
       {% endif %}{% endfor %}
       {% for r in p.given_final_reviews %}
-        <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon" style="width:1.17em"></i></div>
+        <div data-tooltip="{{ r.status|safe }}" class="apic"><i class="{{ r.icon_color }} {{ r.icon }} icon"
+             style="{% if r.objection %}width:1.6em !important;height: 1.6em !important;padding: 4px 0 !important;{% if r.pending %}box-shadow: 0em 0em 0em 0.15em {{ r.pending }} inset;{% endif %}{% else %}width:1.17em{% endif %}"></i></div>
       {% endfor %}
     </td>
   </tr>
@@ -721,7 +790,7 @@ var STATISTICS = {{ stats_json|safe }};
     <div id="progress-bar-container" style="display: inline-block">
     </div>
   </div>
-  <div id="p-content" class="scrolling content">
+  <div id="p-content" class="scrolling content" style="max-height: calc(100% - 6em)">
   </div>
 </div>
 
@@ -745,7 +814,7 @@ var STATISTICS = {{ stats_json|safe }};
     Relay progress chart
   </div>
   <div class="image content" style="margin-top:-1em">
-    <img id="progress-chart-img" class="image" src="{{chart_url}}" />
+    <img id="progress-chart-img" class="ui fluid image" src="{{chart_url}}" />
   </div>
 </div>
 
@@ -798,21 +867,21 @@ var STATISTICS = {{ stats_json|safe }};
       </div>
       <div class="three fields">
         <div class="inline field">
-          <div class="ui checkbox">
+          <div class="ui checkbox" style="margin-top: 1em">
             <input name="clips" type="checkbox" value="1"{% if estafette.with_review_clips %}
                    checked="checked"{% endif %}>
             <label>Review clips</label>
           </div>
         </div>
         <div class="inline field">
-          <div class="ui checkbox">
+          <div class="ui checkbox" style="margin-top: 1em">
             <input name="badges" type="checkbox" value="1"{% if estafette.with_badges %}
                    checked="checked"{% endif %}>
             <label>Badges</label>
           </div>
         </div>
         <div class="inline field">
-          <div class="ui checkbox">
+          <div class="ui checkbox" style="margin-top: 1em">
             <input name="referees" type="checkbox" value="1"{% if estafette.with_referees %}
                    checked="checked"{% endif %}>
             <label>Referees</label>
@@ -825,14 +894,14 @@ var STATISTICS = {{ stats_json|safe }};
           <input name="bonus" value="{{ estafette.speed_bonus }}" style="width: 5em">
         </div>
         <div class="inline field">
-          <div class="ui checkbox">
+          <div class="ui checkbox" style="margin-top: 0.5em">
             <input name="per-step" type="checkbox" value="1"{% if estafette.bonus_per_step %}
                    checked="checked"{% endif %}>
             <label>Bonus per step</label>
           </div>
         </div>
         <div class="inline field">
-          <div class="ui checkbox">
+          <div class="ui checkbox" style="margin-top: 0.5em">
             <input name="hidden" type="checkbox" value="1"{% if estafette.is_hidden %}
                    checked="checked"{% endif %}>
             <label>Not visible</label>
@@ -871,7 +940,7 @@ var STATISTICS = {{ stats_json|safe }};
   </div>
   <a id="data-saver" target = '_blank' hidden="hidden"></a>
   <div class="content" style="margin-top:-2em">
-    <img id="histogram" class="image" src="" style="min-height: 300px" />
+    <img id="histogram" class="ui fluid image" src="" style="min-height: 300px" />
     <canvas id="canvas" width="600" height="300" style="display: none"></canvas>
     <table>
       <tr>
@@ -961,3 +1030,4 @@ var STATISTICS = {{ stats_json|safe }};
   </div>
 </div>
 {% endblock page_content %}
+

@@ -1,12 +1,11 @@
-{% extends "base-with-menus.html" %}
-
+{% extends "./base-with-menus.html" %}
 {% comment %}
 
 Software developed by Pieter W.G. Bots for the PrESTO project
 Code repository: https://github.com/pwgbots/presto
 Project wiki: http://presto.tudelft.nl/wiki
 
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -30,6 +29,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 {% load static %}
 
 {% block headlines %}
+  <link href="{% static 'presto/quill.snow.css' %}" rel="stylesheet">
+  <script src="{% static 'presto/quill.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/dropdown.css' %}">
   <script type="text/javascript" src="{% static 'presto/dist/components/dropdown.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/checkbox.css' %}">
@@ -46,6 +47,22 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 span.nbs {
   white-space: nowrap;
   margin-right: 1em;
+}
+.ql-container {
+  font-family: Lato;
+  font-size: 16px;
+}
+.ql-toolbar.ql-snow {
+  padding: 2px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+blockquote {
+  border-left: 4px solid #00a6d6;
+  margin-bottom: 5px;
+  margin-top: 5px;
+  padding-left: 16px;
+  font-size: 90%;
+  background-color: #dff0ff;
 }
 {% endblock styles %}
 
@@ -67,10 +84,15 @@ $('#new-estafette-form')
              'd': $('#description').val()
              }
       $.post('./ajax', obj, function(response, status, xhr) {
-        if ( status == 'error' ) {
+        if (status == 'error') {
           alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
         } else {
-          window.location.replace('./instructor');
+          json = JSON.parse(response);
+          if (json.error != null) {
+            alert('Error: ' + json.error);
+          } else {
+            window.location.replace('instructor');
+          }
         }
       });
     }
@@ -89,10 +111,86 @@ $('#cancel-form-button')
   .click(function() {
     $('#new-estafette-segment').hide();
     $('#new-estafette-button').show();
+    return false;
   })
 ;
 
+$('#confirm-question-modal').modal({
+  onApprove: function() {
+    var obj = {
+      a: 'claim question',
+      h: QUESTION_HEX
+    };
+    $.post('ajax', obj, function(response, status, xhr) {
+      if (status == 'error') {
+        alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+      } else {
+        json = JSON.parse(response);
+        if (json.error != null) {
+          alert('Error: ' + json.error);
+        } else {
+          window.location.replace('instructor');
+        }
+      }
+    });
+  }
+});
+
+{% if question %}
+QUILL = new Quill('#quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [2, 3, 4, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      ['blockquote', 'link', 'image'],
+      [{ list: 'ordered' }, { list: 'bullet' }]
+    ]
+  },
+  placeholder: '(your reply)',
+  theme: 'snow',
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'link', 'image', 'header', 'list']
+});
+{% endif %}
+
 {% endblock component_inits %}
+
+{% block javascripts %}
+
+{# NOTE: ID of question to be taken on (QUESTION_HEX) is set in confirmQuestion() #}
+
+var QUILL, QUESTION_HEX = '';
+
+function confirmQuestion(hex) {
+  var obj = {
+    a: 'get question',
+    h: hex
+  };
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      json = JSON.parse(response);
+      if (json.error != null) {
+        alert('Error: ' + json.error);
+      } else {
+        QUESTION_HEX = json.hex;  {# global variable! #}
+        $('#confirm-case').html(json.cl);
+        $('#confirm-content').html(json.msg);
+        $('#confirm-question-modal').modal('show');
+      }
+    }
+  });
+}
+
+{% if question %}
+function sendReply() {
+  $('#reply-body').val(QUILL.container.querySelector('.ql-editor').innerHTML);
+  $('#reply-form').submit();
+}
+{% endif %}
+
+{% endblock javascripts %}
 
 {% block user_menu %}
 <div class="ui compact menu">
@@ -112,6 +210,12 @@ $('#cancel-form-button')
   </div>
 </h3>
 {% if running_relays %}
+  {% if ce.q_count %}
+    <div class="ui small orange horizontal label" data-tooltip="{{ ce.q_count }} questions">
+      <i class="mail icon"></i>
+      {{ ce.q_count }}
+    </div>
+  {% endif %}
   <div class="ui fluid vertical menu">
   {% for ce in running_relays %}
     <a class="item" href="course-estafette/{{ ce.hex }}">
@@ -157,12 +261,87 @@ $('#cancel-form-button')
     </a>
   {% endfor %}
   </div>
+  
+  {% if question %}
+    <h3 class="ui header">
+      <i class="mail icon"></i>
+      <div class="content">
+        Question on case {{ question.case }}
+      </div>
+    </h3>
+    <div class="ui raised segment">
+      <div class="ui top attached secondary segment">
+        <div>
+          <div style="display: inline-block; width: 6em; font-weight: bold">Team:</div>
+          <div style="display: inline-block">{{ question.team }}</div>
+        </div>
+        <div>
+          <div style="display: inline-block; width: 6em; font-weight: bold">E-mail:</div>
+          <div style="display: inline-block; font-family: monospace">{{ question.email }}</div>
+        </div>
+        <div>
+          <div style="display: inline-block; width: 6em; font-weight: bold">Submitted:</div>
+          <div style="display: inline-block">{{ question.time }}</div>
+        </div>
+      </div>
+      <div class="ui attached segment">
+        {{ question.html|safe }}
+      </div>
+      <div id="symbols" class="ui small bottom attached message" style="padding:0.3em">
+        &alpha; &beta; &gamma; &delta; &epsilon; &zeta; &eta; &theta; &iota; &kappa;
+        &lambda; &mu; &nu; &xi; &omicron; &pi; &rho; &sigma; &tau; &upsilon; &phi;
+        &chi; &psi; &omega; &Gamma; &Delta; &Theta; &Lambda; &Xi; &Pi; &Sigma; &Phi;
+        &Psi; &Omega; &frac12; &infin; &sect; &starf; &middot; &plusmn; &minus;
+        &radic; &ne; &le; &ge; &asymp; &nap; &sim; &Nopf; &Qopf; &Ropf; &Zopf;
+        &empty; &isin; &notin; &sub; &nsub; &sube; &nsube; &cap; &cup; &forall;
+        &exist; &nexist; &and; &or; &not; &larr; &uarr; &rarr; &darr; &harr;
+        &varr; &lArr; &uArr; &rArr; &dArr; &hArr; &vArr; &bowtie;
+      </div>
+      <div id="quill-container">
+        <div id="quill-editor" style="min-height: 10em"></div>
+      </div>
+      <form id="reply-form" method="post" action="instructor/reply">
+        <input type="hidden" name="hex" value="{{ question.hex }}">
+        <input id="reply-body" type="hidden" name="msg">
+      </form>
+      <a class="ui small primary labeled icon button" style="margin-top: 1em" onclick="sendReply();">
+        <i class="mail icon"></i>
+        Send answer
+      </a>
+    </div>
+  {% endif %}
+  
+  {% if questions %}
+    <h3 class="ui header">
+      <i class="mail outline icon"></i>
+      <div class="content">
+        {{ questions|length }} {% if question %}more {% endif %}question{% if questions|length != 1 %}s{% endif %}
+      </div>
+    </h3>
+    {% if not question %}
+      <div class="ui fluid vertical menu">
+      {% for q in questions %}
+        <a class="{% if q.taken %}disabled {% endif %}item"{% if not q.taken %}
+           onclick="confirmQuestion('{{ q.hex }}')"{% endif %}>
+          <h3 class="ui tiny header">
+            <div class="ui {% if q.taken %}orange {% endif %}horizontal circular label"{% if q.taken %}
+                 data-tooltip="{{ q.taken }}" data-position="top left"{% endif %}>
+              {{ q.case }}
+            </div>
+            <span style="color: grey; margin-right: 1em">{{ q.time }}</span> {{ q.team }}
+          </h3>
+        </a>
+      {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+
 {% endif %}
 
 <h3 class="ui header">
   <i class="university icon"></i>
   <div class="content">
-  {% if courses %}
+  {% if courses or closed_courses %}
     Courses in which you are instructor
   {% else %}
     No courses in which you are instructor
@@ -170,28 +349,57 @@ $('#cancel-form-button')
   </div>
 </h3>
 {% if courses %}
-<div class="ui fluid vertical menu">
+  <div class="ui fluid vertical menu">
+    {% for c in courses %}
+      <a class="item" href="course/{{ c.hex }}">
+        <h3 class="ui header">
+          <div class="ui blue horizontal label" style="margin-left: 0">
+           {{ c.estafette_count }} relay{% if c.estafette_count != 1 %}s{% endif %}
+          </div>
+          {{ c.object.code }} &ndash; {{ c.object.name }}
+          <div class="sub header">
+            <small>
+              <span class="nbs"><em>Starts:</em> {{ c.start }}</span>
+              <span class="nbs"><em>Ends:</em> {{ c.end }}</span>
+              <span class="nbs"><em>Course manager:</em> {{ c.manager }}</span>
+            </small>
+          </div>
+        </h3>
+      </a>
+    {% endfor %}
+  </div>
 {% endif %}
-{% for c in courses %}
-  <a class="item" href="course/{{ c.hex }}">
-    <h3 class="ui header">
-      <div class="ui blue horizontal label" style="margin-left: 0">
-       {{ c.estafette_count }} relay{% if c.estafette_count != 1 %}s{% endif %}
-      </div>
-      {{ c.object.code }}&mdash;{{ c.object.name }}
-      <div class="sub header">
-        <small>
-          <span class="nbs"><em>Starts:</em> {{ c.start }}</span>
-          <span class="nbs"><em>Ends:</em> {{ c.end }}</span>
-          <span class="nbs"><em>Course manager:</em> {{ c.manager }}</span>
-        </small>
-      </div>
-    </h3>
-  </a>
-{% endfor %}
-{% if courses %}
-</div>
+{% if closed_courses %}
+  <h3 class="ui header">
+    <i class="circular university icon"></i>
+    <div class="content">
+      <span style="font-size: 1.28571429rem; margin-right:1em">{{ closed_course_count }} now closed</span>
+      <a class="ui large circular label" style="width: 1em" onclick="$('#closed-courses').toggle();">
+        <i class="chevron down icon"></i>
+      </a>
+    </div>
+  </h3>
+  <div id="closed-courses" class="ui fluid vertical menu" style="display: none">
+    {% for c in closed_courses %}
+      <a class="item" href="course/{{ c.hex }}">
+        <h3 class="ui header">
+          <div class="ui blue horizontal label" style="margin-left: 0">
+           {{ c.estafette_count }} relay{% if c.estafette_count != 1 %}s{% endif %}
+          </div>
+          {{ c.object.code }} &ndash; {{ c.object.name }}
+          <div class="sub header">
+            <small>
+              <span class="nbs"><em>Starts:</em> {{ c.start }}</span>
+              <span class="nbs"><em>Ends:</em> {{ c.end }}</span>
+              <span class="nbs"><em>Course manager:</em> {{ c.manager }}</span>
+            </small>
+          </div>
+        </h3>
+      </a>
+    {% endfor %}
+  </div>
 {% endif %}
+
 <h3 class="ui header">
   <i class="flag icon"></i>
   <div class="content">
@@ -202,7 +410,6 @@ $('#cancel-form-button')
   {% endif %}
   </div>
 </h3>
-
 {% if estafettes %}
   <div class="ui fluid vertical menu">
   {% for e in estafettes %}
@@ -240,7 +447,7 @@ $('#cancel-form-button')
       </div>
       <div class="inline field">
         <label>Template:</label>
-        <div class="ui selection dropdown">
+        <div class="ui selection dropdown" style="min-width: 75% !important">
           <input id="template" type="hidden">
           <i class="dropdown icon"></i>
           <div class="default text">Relay template</div>
@@ -261,4 +468,25 @@ $('#cancel-form-button')
   </form>
 </div>
 {% endif %}
+
+<div id="confirm-question-modal" class="ui small modal">
+  <div class="header">
+    <div id="confirm-case" class="ui huge blue horizontal label"></div>
+    Do you want to take on this question?
+  </div>
+  <div id="confirm-content" class="content">
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      Cancel
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui blue approve right labeled icon button">
+      Confirm
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
 {% endblock page_content %}
+

@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -58,18 +54,30 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 # presto modules
 from presto.generic import change_role, generic_context, has_role, report_error
-from presto.utils import (decode, encode, log_message, os_path, random_hex,
-    DATE_TIME_FORMAT, EDIT_STRING)
+from presto.utils import (
+    DATE_TIME_FORMAT,
+    decode,
+    encode,
+    EDIT_STRING,
+    log_message,
+    os_path,
+    random_hex
+    )
 
 
-# view for download page
-# NOTE: this view does not render a page, but sends a file to the browser
 @login_required(login_url=settings.LOGIN_URL)
 def download(request, **kwargs):
-    # NOTE: downloading a file opens a NEW browser tab/window, meaning that
-    # the coding keys should NOT be rotated; this is achieved by passing "NOT" as test code.
+    """
+    View for download page.
+    
+    NOTE:
+    (1) This view does not render a page, but sends a file to the browser.
+    (2) Downloading a file opens a NEW browser tab/window, meaning that the
+        coding keys should NOT be rotated; this is achieved by passing "NOT"
+        as test code.
+    """
     context = generic_context(request, 'NOT')
-    # check whether user can have student or instructor role
+    # Check whether user can have student or instructor role.
     is_instructor = has_role(context, 'Instructor')
     if not (has_role(context, 'Student') or is_instructor):
         return render(request, 'presto/forbidden.html', context)
@@ -89,14 +97,18 @@ def download(request, **kwargs):
             w = FileWrapper(file(f.path, 'rb'))
             response = HttpResponse(w, 'application/octet-stream')
             response['Content-Disposition'] = (
-                'attachment; filename="attachment-case-%s%s"' % (ec.letter, ext))
+                'attachment; filename="attachment-case-{}{}"'.format(
+                    ec.letter,
+                    ext
+                    )
+                )
             return response
 
         # no case attachment? then the download request must concern an assignment
         work = kwargs.get('work', '')
         dwnldr = kwargs.get('dwnldr', '')
         # verify that download is for an existing assignment
-        log_message('Looking for assignment #%d' % aid, context['user'])
+        log_message('Looking for assignment #{}'.format(aid), context['user'])
         a = Assignment.objects.get(pk=aid)
         
         # get the list of participant uploads for this assignment (or its clone original)
@@ -121,7 +133,7 @@ def download(request, **kwargs):
         os.mkdir(temp_dir)
         log_message('TEMP dir: ' + temp_dir, context['user'])
         if file_name == 'all-zipped':
-            pr_work = 'pr-step%d%s' % (a.leg.number, a.case.letter)
+            pr_work = 'pr-step{}{}'.format(a.leg.number, a.case.letter)
             zip_dir = os.path.join(temp_dir, pr_work)
             os.mkdir(zip_dir)
             # copy the upladed files to the temporary dir ...
@@ -131,19 +143,34 @@ def download(request, **kwargs):
                 ext = os.path.splitext(pu.upload_file.name)[1].lower()
                 formal_name = os_path(os.path.join(zip_dir, pu.file_name) + ext)
                 if is_instructor:
-                    log_message('Copying %s "as is" to ZIP as %s' % (real_name, formal_name), context['user'])
+                    log_message(
+                        'Copying {} "as is" to ZIP as {}'.format(
+                            real_name,
+                            formal_name
+                            ),
+                        context['user']
+                        )
                     # NOTE: for instructors, do NOT anonymize the document
-                    copy2(real_name, formal_name)
+                    copy2(real_name, settings.LEADING_SLASH + formal_name)
                 else:
-                    log_message('Copy-cleaning %s to ZIP as %s' % (real_name, formal_name), context['user'])
+                    log_message(
+                        'Copy-cleaning {} to ZIP as {}'.format(
+                            real_name,
+                            formal_name
+                            ),
+                        context['user']
+                        )
                     # strip author data from file and write it to the "work" dir
                     clear_metadata(real_name, formal_name)
             # compress the files into a single zip file
             zip_file = make_archive(zip_dir,'zip', temp_dir, pr_work)
-            response = HttpResponse(FileWrapper(file(zip_file,'rb')),
-                                    content_type='application/zip')
+            response = HttpResponse(
+                FileWrapper(file(zip_file,'rb')),
+                content_type='application/zip'
+                )
             response['Content-Disposition'] = (
-                'attachment; filename="%s.zip"' % pr_work)
+                'attachment; filename="{}.zip"'.format(pr_work)
+                )
             # always record download in database
             UserDownload.objects.create(user=context['user_session'].user, assignment=a)
             # only change time_first_download if it concerns a predecessor's work!
@@ -160,11 +187,11 @@ def download(request, **kwargs):
                 if f['name'] == file_name:
                     rf = f
             if not rf:
-                raise ValueError('Unknown file name: %s' % file_name)
+                raise ValueError('Unknown file name: ' + file_name)
             # find the corresponding upload
             pul = pul.filter(file_name=rf['name'])
             if not pul:
-                raise ValueError('File "%s" not found' % rf['name'])
+                raise ValueError('File "{}" not found'.format(rf['name']))
             pu = pul.first()
             # the real file name should not be known to the user
             real_name = os.path.join(upl_dir, os.path.basename(pu.upload_file.name))
@@ -172,23 +199,43 @@ def download(request, **kwargs):
             # the formal name is the requested file field plus the document's extension
             formal_name = os_path(os.path.join(temp_dir, pu.file_name) + ext)
             if is_instructor:
-                log_message('Copying %s "as is" to ZIP as %s' % (real_name, formal_name), context['user'])
+                log_message(
+                    'Copying {} "as is" to temp dir as {}'.format(
+                        real_name,
+                        formal_name
+                        ),
+                    context['user']
+                    )
                 # NOTE: for instructors, do NOT anonymize the document
-                copy2(real_name, formal_name)
+                copy2(real_name, settings.LEADING_SLASH + formal_name)
             else:
                 # strip author data from the file
-                log_message('Copy-cleaning %s to %s' % (real_name, formal_name), context['user'])
+                log_message(
+                    'Copy-cleaning {} to {}'.format(
+                        real_name,
+                        formal_name
+                        ),
+                    context['user']
+                    )
                 clear_metadata(real_name, formal_name)
+            od = 'application/vnd.openxmlformats-officedocument.'
             mime = {
                 '.pdf': 'application/pdf',
-                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-            }
+                '.mdl': 'text/x-vensim',
+                '.docx': od + 'wordprocessingml.document',
+                '.xlsx': od + 'spreadsheetml.sheet',
+                '.pptx': od + 'presentationml.presentation'
+                }
             w = FileWrapper(file(settings.LEADING_SLASH + formal_name, 'rb'))
             response = HttpResponse(w, content_type=mime[ext])
             response['Content-Disposition'] = (
-                'attachment; filename="%s-%d%s%s"' % (file_name, a.leg.number, a.case.letter, ext))
+                'attachment; filename="{}-{}{}{}"'.format(
+                    file_name,
+                    a.leg.number,
+                    a.case.letter,
+                    ext
+                    )
+                )
             # always record download in database
             UserDownload.objects.create(user=context['user_session'].user, assignment=a)
             # only change time_first_download if it concerns a predecessor's work!
@@ -204,10 +251,13 @@ def download(request, **kwargs):
                 if ap.time_first_viewed == DEFAULT_DATE:
                     ap.time_first_viewed = timezone.now()
                     ap.save()
-                    log_message('First view by referee: ' + unicode(ap), context['user'])
+                    log_message(
+                        'First view by referee: ' + unicode(ap),
+                        context['user']
+                        )
             return response
             
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
 
@@ -219,8 +269,11 @@ def clean_xml_in_zip(zip_name):
     xml_names = []
     zf = ZipFile(zip_name, 'r')
     zl = zf.infolist()
-    word_re = re.compile(ur'<w:lang( w:[a-zA-Z]{1,16}="[a-zA-Z\-]{1,10}"){1,5}/>', re.UNICODE)
-    ppt_re = re.compile(ur' lang="[a-zA-Z\-]{1,10}"', re.UNICODE)
+    word_re = re.compile(
+        r'<w:lang( w:[a-zA-Z]{1,16}="[a-zA-Z\-]{1,10}"){1,5}/>',
+        re.UNICODE
+        )
+    ppt_re = re.compile(r' lang="[a-zA-Z\-]{1,10}"', re.UNICODE)
     for x in zl:
         if x.filename[-4:] == '.xml':
             xml_names.append(x.filename)
@@ -324,7 +377,15 @@ def clear_metadata(src, dst):
                             dst_zip.writestr(item, xml)
                         else:
                             dst_zip.writestr(item, src_zip.read(item.filename))
-    except Exception, e:
-        log_message('Exception while removing metadata from a %s file: %s'
-                    % (ext, str(e)))
+        else:
+            # fall-through: any other file type is simply copied
+            copy2(src, dst)
+
+    except Exception as e:
+        log_message(
+            'Exception while removing metadata from a {} file: {}'.format(
+                ext,
+                str(e)
+                )
+            )
     return

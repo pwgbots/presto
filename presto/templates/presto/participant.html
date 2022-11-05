@@ -29,7 +29,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 {#       course_estafette.html in response to an AJAX call, hence no HTML page head etc.  #}
 <div class="ui small header">
   <div class="content">
-    Case {{ assign.case.letter}} &mdash; {{ assign.case.name }}
+    Case {{ assign.case.letter}}: {{ assign.case.name }}
   </div>
   <div class="sub header">
     {% if uploaded %}
@@ -66,7 +66,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   <div class="ui {{ s.color }} secondary segment">
     {{ md_rev|safe }}
     <label><strong>Rating:</strong></label>
-    <div id="rating-{{ assign.leg.number }}" class="ui star rating" data-rating="{{ review.grade }}" data-max-rating="5"></div>
+    <div id="rating-{{ assign.leg.number }}" class="ui yellow star rating"
+         data-rating="{{ review.grade }}" data-max-rating="5"></div>
   </div>
   {% if review.is_rejection %}
     <div class="ui secondary segment">
@@ -105,7 +106,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     {{ md_appr|safe }}
     {% if review.is_appeal %}
       <div class="ui small header">
-        <i class="pointing up icon"></i>
+        <i class="pointing up outline icon"></i>
         <div class="content">
           Participant has appealed
         </div>
@@ -130,7 +131,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         </div>
         {{ ref_motiv|safe }}
         <label><strong>Referee's rating of predecessor's work:</strong></label>
-        <div id="ref-rat-{{ assign.leg.number }}" class="ui star rating" data-rating="{{ ref_rat }}" data-max-rating="5"></div>
+        <div id="ref-rat-{{ assign.leg.number }}" class="ui yellow star rating"
+             data-rating="{{ ref_rat }}" data-max-rating="5"></div>
         <p style="margin-top: 0.5em">{{ penalties|safe }}</p>
         {% if time_pred_appr %}
           <div>

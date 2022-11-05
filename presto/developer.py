@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -56,9 +52,9 @@ def developer(request, **kwargs):
             context = generic_context(request, h)
             etid = decode(h, context['user_session'].decoder)
             et = EstafetteTemplate.objects.get(pk=etid)
-            log_message('Deleting template %s' % et.name, context['user'])
+            log_message('Deleting template ' + et.name, context['user'])
             et.delete()
-        except Exception, e:
+        except Exception as e:
             report_error(request, context, e)
             return render(request, 'presto/error.html', context)
 
@@ -66,8 +62,10 @@ def developer(request, **kwargs):
     context['templates'] = [{
         'object': t,
         'hex': encode(t.id, context['user_session'].encoder),
-        'edits': EDIT_STRING % (prefixed_user_name(t.last_editor),
-                 timezone.localtime(t.time_last_edit).strftime(DATE_TIME_FORMAT)),
+        'edits': EDIT_STRING.format(
+            name=prefixed_user_name(t.last_editor),
+            time=timezone.localtime(t.time_last_edit).strftime(DATE_TIME_FORMAT)
+            ),
         'leg_count': EstafetteLeg.objects.filter(template=t).count()
         } for t in EstafetteTemplate.objects.filter(
             Q(editors=context['user']) | Q(creator=context['user'])).distinct()
@@ -77,11 +75,14 @@ def developer(request, **kwargs):
     context['questionnaires'] = [{
         'object': q,
         'hex': encode(q.id, context['user_session'].encoder),
-        'edits': EDIT_STRING % (prefixed_user_name(q.last_editor),
-                 timezone.localtime(q.time_last_edit).strftime(DATE_TIME_FORMAT)),
+        'edits': EDIT_STRING.format(
+            name=prefixed_user_name(q.last_editor),
+            time=timezone.localtime(q.time_last_edit).strftime(DATE_TIME_FORMAT)
+            ),
         'item_count': 0, # to be changed!!
         } for q in QuestionnaireTemplate.objects.filter(
-            Q(editors=context['user']) | Q(creator=context['user'])).distinct()
+            Q(editors=context['user']) | Q(creator=context['user'])
+            ).distinct()
     ]
 
     context['page_title'] = 'Presto Developer' 

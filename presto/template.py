@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -39,12 +35,21 @@ from django.utils import timezone
 from random import randrange
 
 # Presto modules
-from generic import change_role, generic_context, report_error, warn_user
-from utils import (decode, encode, log_message, plural_s, prefixed_user_name,
-    DATE_TIME_FORMAT, EDIT_STRING)
+from presto.generic import change_role, generic_context, report_error, warn_user
+from presto.utils import (
+    DATE_TIME_FORMAT,
+    decode,
+    EDIT_STRING,
+    encode,
+    log_message,
+    plural_s,
+    prefixed_user_name,
+    ui_img
+    )
 
 from .models import (
     Estafette, EstafetteLeg, EstafetteTemplate,
+    Language,
     Profile,
     random_hex32, Role
 )
@@ -71,11 +76,16 @@ def template(request, **kwargs):
             el = EstafetteLeg.objects.get(pk=elid)
             et = el.template  # remember the template that is being edited
             n = el.number
-            log_message('Deleting step %d (%s) from template %s' %
-                        (n, el.name, et.name), context['user'])
+            log_message(
+                'Deleting step {} ({}) from template {}'.format(n, el.name, et.name),
+                context['user']
+                )
             el.delete()
             # now renumber all subsequent steps of this template
-            EstafetteLeg.objects.filter(template=et, number__gt=n).update(number=F('number') - 1)
+            EstafetteLeg.objects.filter(
+                template=et,
+                number__gt=n
+                ).update(number=F('number') - 1)
 
         # check whether some leg is to be renumbered
         elif kwargs.get('action', '') in ['move-up', 'move-down']:
@@ -96,7 +106,103 @@ def template(request, **kwargs):
                 el.save()
                 swel.number = n  # to respect UNIQUE constraint
                 swel.save()
-                log_message('Renumbered step %s from %d to %d' % (el.name, n, nn), context['user'])
+                log_message(
+                    'Renumbered step {} from {} to {}'.format(el.name, n, nn),
+                    context['user']
+                    )
+        # check whether the template is previewed
+        elif kwargs.get('action', '') == 'preview':
+            etid = decode(h, context['user_session'].decoder)
+            et = EstafetteTemplate.objects.get(pk=etid)
+            context['hex'] = encode(et.id, context['user_session'].encoder)
+            context['object'] = et
+            lang = Language.objects.filter(code='en-US').first()
+            context['lang'] = lang
+            context['edits'] = EDIT_STRING.format(
+                name=prefixed_user_name(et.last_editor),
+                time=timezone.localtime(et.time_last_edit).strftime(DATE_TIME_FORMAT)
+                )
+            # pass the leg data for the progress bar
+            context['legs'] = [
+                el for el in EstafetteLeg.objects.filter(
+                    template=et
+                    ).order_by('number')
+                ]
+            # see which task is previewed (default: "start, commit to rules")
+            step = int(kwargs.get('step', 0))
+            task = kwargs.get('task', 'c')
+            if step == 0:
+                if len(et.default_rules) > 0:
+                    rules = et.default_rules
+                else:
+                    rules = lang.phrase('Rules_of_the_game')
+                task_dict = {'type':'START', 'rules':rules}
+            elif step > len(context['legs']):
+                task_dict = {'type':'FINISH'}
+                task = ''
+            else:
+                if step > 1 and task != 'p' and task != 's':
+                    el = context['legs'][step - 2]
+                else:
+                    el = context['legs'][step - 1]
+                task_dict = {'desc':el.description, 'file_list':el.file_list()}
+            if task == 'p':
+                n = len(context['legs']) - step + 1
+                if n == 1:
+                    steps_to_go = lang.phrase('One_more_step')
+                else:
+                    steps_to_go = lang.phrase('Steps_ahead').format(nr=n)
+                task_dict.update({
+                    'type':'PROCEED',
+                    'task':'Proceed',
+                    'steps_to_go':steps_to_go,
+                    'header': lang.phrase('Proceed_header').format(
+                        nr=el.number,
+                        name=el.name)
+                    })
+            elif task == 'd':
+                task_dict.update({
+                    'type':'DOWNLOAD',
+                    'task':'Download',
+                    'icon':'download',
+                    'header': lang.phrase('Download_header').format(
+                        nr=el.number,
+                        name=el.name)
+                    })
+            elif task == 'r':
+                task_dict.update({
+                    'type': 'REVIEW',
+                    'task': 'Submit review',
+                    'icon': 'star outline',
+                    'header': lang.phrase('Review_header').format(
+                        nr=el.number,
+                        name=el.name
+                        ),
+                    'instr': ui_img(el.review_instruction),
+                    'rejectable': el.rejectable
+                    })
+            elif task == 's':
+                task_dict.update({
+                    'type': 'SUBMIT',
+                    'task': 'Submit',
+                    'icon': 'upload',
+                    'header': lang.phrase('Upload_header').format(
+                        nr=el.number,
+                        name=el.name
+                        ),
+                    'instr': el.upload_instruction,
+                    'rev_instr': el.complete_review_instruction()
+                    })
+            context['task'] = task_dict
+            # NOTE: after SUBMIT comes PROCEED to the NEXT step
+            if task == 's':
+                context['step'] = step
+                context['next_step'] = step + 1
+            else:
+                context['step'] = step - 1
+                context['next_step'] = step
+            context['page_title'] = 'Presto template preview' 
+            return render(request, 'presto/preview.html', context)
         # no step action? then hex identifies the selected template
         else:
             etid = decode(h, context['user_session'].decoder)
@@ -107,17 +213,19 @@ def template(request, **kwargs):
                 n = EstafetteLeg.objects.filter(template=et).count() + 1
                 el = EstafetteLeg.objects.create(
                         template = et,
-                        name = 'New step (%d)' % n,
+                        name = 'New step ({})'.format(n),
                         number = n,
                         creator = context['user'],
                         time_created = timezone.now(),
                         last_editor = context['user'],
                         time_last_edit = timezone.now()
                     )
-                log_message('Added %s to template %s' % (el.name, et.name),
-                            context['user'])
+                log_message(
+                    'Added {} to template {}'.format(el.name, et.name),
+                    context['user']
+                    )
     # catch-all for unanticipated errors
-    except Exception, e:
+    except Exception as e:
         report_error(context, e) 
         return render(request, 'presto/error.html', context)
 

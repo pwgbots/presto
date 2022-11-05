@@ -23,40 +23,26 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-"""PrESTO project URL Configuration
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/1.11/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  url(r'^$', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  url(r'^$', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.conf.urls import url, include
-    2. Add a URL to urlpatterns:  url(r'^blog/', include('blog.urls'))
-"""
-from django.conf.urls import include, url
-from django.contrib import admin
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 from django.conf import settings
+from django.core.management.base import BaseCommand
+from django.utils import timezone
 
-if settings.USE_SAML is True:
+from presto.models import Assignment, CourseEstafette, EstafetteCase, DEFAULT_DATE
+from presto.utils import log_message
 
-    from daeauth import AdminSiteWithExternalAuth
-    admin.site = AdminSiteWithExternalAuth()
-    admin.autodiscover()
-    
-    urlpatterns = [
-        url(r'^', include('presto.urls')),
-        url(r'^admin/', admin.site.urls),
-        url(r'^saml2/', include('djangosaml2.urls')), 
-    
-    ]
+# this command is defined to test a routine -- put test code in the handle() routine
+class Command(BaseCommand):
 
-else:
-    urlpatterns = [
-        url(r'^presto/', include('presto.urls')),
-        url(r'^admin/', admin.site.urls),
-        ]
+    def handle(self, *args, **options):
+        aid = 17604
+        case_letter = 'D'
+        a = Assignment.objects.filter(id=aid).first()
+        c = EstafetteCase.objects.filter(estafette=a.case.estafette, letter=case_letter).first()
+        if a:
+            log_message(
+                'TRACE: Changing case for assignment {} to {}'.format(a, c.letter)
+                )
+            a.case = c
+            a.save()

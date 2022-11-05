@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -24,9 +24,6 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import IntegrityError
@@ -34,7 +31,7 @@ from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
 
-from .models import Participant, Role, UserSession, NO_SESSION_KEY
+from .models import NO_SESSION_KEY, Participant, Role, UserSession
 
 # python modules
 from datetime import timedelta
@@ -44,13 +41,32 @@ import sys
 import traceback
 
 # presto modules
-from presto.utils import (decode, encode, log_message, prefixed_user_name, random_hex,
-    EXPIRED_SESSION_KEY)
+from presto.utils import (
+    decode,
+    encode,
+    EXPIRED_SESSION_KEY,
+    log_message,
+    prefixed_user_name,
+    random_hex
+    )
 
 
+BACK_IN_BROWSER = """
+You probably went back in your browser, used an old URL, or have opened more
+than one Presto window in the same browser.<br>
+To prevent this, navigate by only using buttons and menus, and create a plain
+bookmark for the Presto website:&nbsp; <tt>{}</tt>
+"""
+
+EXPIRED_MSG = """
+If this error occurred during regular operations, please
+report it to the Presto Administrator.
+"""
+                
+                
 # returns user if authenticated; otherwise None
 def authenticated_user(request):
-    if request.user.is_authenticated():
+    if request.user.is_authenticated:
         return request.user
     else:
         return None
@@ -65,6 +81,13 @@ def generic_context(request, test_code=None):
     else:
         # assume that "presto" is the root dir to which the index template is directed
         base_url = request.build_absolute_uri().split('/presto/', 1)[0] + '/presto/'
+
+    # get user IP from request
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        settings.USER_IP = x_forwarded_for.split(',')[0]
+    else:
+        settings.USER_IP = request.META.get('REMOTE_ADDR')
 
     # start with an empty notification list
     notifications = []
@@ -195,9 +218,14 @@ def is_focused_user(context):
 def validate_alias(context, alias):
     if match('^[a-zA-Z][a-zA-Z0-9\s\.\-\'\(\)]{5,15}$', alias):
         return True
-    warn_user(context, 'Invalid participant alias "%s"' % alias,
-        'An alias must start with a letter, and be 6 to 15 characters long.<br>' +
-        'It may contain letters, digits, periods, hyphens, apostrophes, and single spaces.')
+    warn_user(
+        context,
+        'Invalid participant alias "{}"'.format(alias),
+        """An alias must start with a letter, and be 6 to 15 characters long.
+           <br>
+           It may contain letters, digits, periods, hyphens, apostrophes,
+           and single spaces."""
+        )
     return False
 
 
@@ -221,7 +249,7 @@ def set_focus_and_alias(context, csid, alias, clear_sessions=False):
             if clear_sessions:
                 us.delete()
             else:
-                warn_user(context, 'Alias "%s" already in use' % alias)
+                warn_user(context, 'Alias "{}" already in use'.format(alias))
                 return False
     # update user session state
     uss = loads(context['user_session'].state)
@@ -230,10 +258,13 @@ def set_focus_and_alias(context, csid, alias, clear_sessions=False):
     context['user_session'].state = dumps(uss)
     context['user_session'].save()
     # also add alias-related entries to context dictionary
-    context.update({'csid': uss['course_student_id'], 'alias': uss['alias']})
+    context.update({
+        'csid': uss['course_student_id'],
+        'alias': uss['alias']
+        })
     # do not inform demonstration users, as they already get a dedicated dialog
     if context['user'].username != settings.DEMO_USER_NAME:
-        inform_user(context, 'Now focused as "%s"' % alias)
+        inform_user(context, 'Now focused as "{}"'.format(alias))
     return True
 
 
@@ -256,11 +287,11 @@ def remove_focus_and_alias(context, csid):
 def qualify_dummy_referee(context, leg):
     uss = loads(context['user_session'].state)
     # do this only when an alias has been set 
-    if not uss.has_key('alias'):
+    if not ('alias' in uss):
         warn_user(context, 'Not focused - alias qualification denied')
         return False
     # qualifications are stored as a list of leg IDs
-    if uss.has_key('referee_legs'):
+    if 'referee_legs' in uss:
         uss['referee_legs'].append(leg)
     else:
         uss.update({'referee_legs': [leg]})
@@ -315,17 +346,13 @@ def report_error(context, error):
     msg, trace = full_error_message(error)
     # report expired session as an information message
     if msg == EXPIRED_SESSION_KEY:
-        inform_user(context, msg, """You probably went back in your browser, used an old URL,
-or have opened more than one Presto window in the same browser.<br/>
-To prevent this, navigate by only using buttons and menus, and create a plain bookmark
-for the Presto website:&nbsp; <tt>%s</tt>""" % context['base_url'])
+        inform_user(context, msg, BACK_IN_BROWSER.format(context['base_url']))
     else:
         # add trace to notification only if user is admin
         if has_role(context, 'Administrator'):
             txt = trace
         else:
-            txt = ('If this error occurred during regular operations, ' +
-                'please report it to the Presto Administrator.')
+            txt = EXPIRED_MSG
         context['notifications'].append(['red', 'warning sign', msg, txt])
         # always add trace to log file
         log_message(msg + ':\n' + trace, context['user'])

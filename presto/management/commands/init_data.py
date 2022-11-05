@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -36,21 +36,24 @@ from presto.uiphrases import UI_LANGUAGE_CODES, UI_LANGUAGE_NAMES
 class Command(BaseCommand):
 
     def handle(self, *args, **options):
-        print 'Initializing data...'
+        print('Initializing data...')
 
         # create supported languages
         for i in range(len(UI_LANGUAGE_CODES)):
             l, cr_l = Language.objects.get_or_create(
                 name=UI_LANGUAGE_NAMES[i], code=UI_LANGUAGE_CODES[i])
             if cr_l:
-                print 'Added language: %s' % unicode(l)
+                print('Added language: {}'.format(str(l)))
+
+        en = Language.objects.get(code='en-US')
+        nl = Language.objects.get(code='nl-NL')
 
         # create groups
         Role.objects.get_or_create(name='Student', rank=1, icon='user')
         Role.objects.get_or_create(name='Instructor', rank=2, icon='student')
         Role.objects.get_or_create(name='Developer', rank=3, icon='cubes')
         Role.objects.get_or_create(name='Administrator', rank=4, icon='user circle')
-        print 'User groups created.'
+        print('User groups created.')
         
         # create video clip references
         videos = [
@@ -83,19 +86,26 @@ class Command(BaseCommand):
         n = 0
         for v in videos:
             try:
-                lv, cr = LegVideo.objects.get_or_create(leg_number=v['n'], star_range=v['r'],
-                    language=v['l'], presenter_initials=v['p'], url=v['u'])
+                lv, cr = LegVideo.objects.get_or_create(
+                    leg_number=v['n'],
+                    star_range=v['r'],
+                    language=v['l'],
+                    presenter_initials=v['p'],
+                    url=v['u']
+                    )
                 if cr:
                     n += 1
-            except Exception, e:
-                print 'Problem with video %s: %s' % (unicode(v), str(e))
+            except Exception as e:
+                print ('Problem with video {}: {}'.format(unicode(v), str(e)))
         if n > 0:
-            print 'Added %d video clips' % n
+            print('Added {} video clips'.format(n))
 
-        print 'Done.'
+        print('Done.')
 
-#        # EXAMPLE of how to add records to database using "raw" SQL
-#        with connection.cursor() as cursor:
-#            cursor.execute("INSERT INTO `presto_assignment` VALUES "
-#                + "(...), (...), ..."
-#            )
+"""
+        # EXAMPLE of how to add records to database using "raw" SQL
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO `presto_assignment` VALUES "
+                + "(...), (...), ..."
+            )
+"""

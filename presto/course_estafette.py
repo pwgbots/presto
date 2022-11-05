@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,54 +23,86 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.db import connection
 from django.shortcuts import render
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import (
-    Appeal, Assignment, 
-    Course, CourseEstafette, CourseStudent,
+    Appeal,
+    Assignment, 
+    Course,
+    CourseEstafette,
+    CourseStudent,
     DEFAULT_DATE,
-    Estafette, EstafetteCase, EstafetteLeg, EstafetteTemplate,
-    Participant, PeerReview,
+    Estafette,
+    EstafetteCase,
+    EstafetteLeg,
+    EstafetteTemplate,
+    ItemReview,
+    Objection,
+    Participant,
+    PeerReview,
     QuestionnaireTemplate,
     Referee,
+    SHORT_DATE_TIME,
     UserSession
 )
 
 # python modules
 from datetime import datetime, timedelta
+from hashlib import md5
 from json import dumps, loads
 from math import floor
-import md5
 import os
 
 # presto modules
-from presto.generic import (change_role, generic_context, has_role, inform_user,
-    report_error, warn_user
-)
+from presto.generic import (
+    change_role,
+    generic_context,
+    has_role,
+    inform_user,
+    report_error,
+    warn_user
+    )
 from presto.plag_scan import step_status
+from presto.teams import (
+    current_team,
+    team_assignments,
+    team_as_html,
+    team_final_reviews,
+    team_leaders_added_to_relay,
+    team_lookup_dict
+    )
 from presto.utils import (
-    decode, encode, log_message, prefixed_user_name, signed_half_points, string_to_datetime,
-    DATE_FORMAT, DATE_TIME_FORMAT, FACES
-)
+    DATE_FORMAT,
+    DATE_TIME_FORMAT,
+    decode,
+    encode,
+    FACES,
+    GRACE_MINUTE,
+    log_message,
+    prefixed_user_name,
+    signed_half_points,
+    string_to_datetime
+    )
 
 INSTRUCTOR_SUFFIX = ' (instructor)'
-SHORT_DATE_TIME = '%Y-%m-%d %H:%M'
 
-# initialize dictionaries for storing participants, assignments, reviews, and appeals
-# (as *global* variables) in memory to minimize database access
+UPDATE_2019 = timezone.make_aware(datetime.strptime('2019-11-01 00:00', SHORT_DATE_TIME))
+
+ICON_COLORS = ['', 'red', 'orange', 'yellow', 'olive', 'green']
+
+# Initialize dictionaries for storing participants, assignments, reviews, and
+# appeals (as *global* variables) in memory to minimize database access.
 p_dict = {}
 a_dict = {}
 r_dict = {}
+ob_dict = {}
 ap_dict = {}
 
 # likewise, make the "halfway the estafette periode" time global
@@ -79,6 +111,7 @@ half_way = DEFAULT_DATE
 # also make the course estafette parameters global
 speed_bonus = 0
 bonus_per_step = False
+bonus_deadline_dict = {}
 scoring_system = 0  # default: differential scoring
 nr_of_legs = 0
 case_letters = []
@@ -434,29 +467,38 @@ class Step(object):
         self.self_review = False
         self.clone = False
         self.rejection = False
+        self.hasty_work = ''
         if a['time_scanned'] == DEFAULT_DATE:
             self.scan_status = step_status(self.number)  # will denote "undetermined"
         else:
             self.scan_status = step_status(self.number, a['scan_result'])
         self.score = 0
         self.score_details = ''
+        self.rejection_penalties = 0
+        self.rejection_penalty_details = ''
 
-    # calculates sub-score for this step
-    def set_attributes(self):
-        # initialize default values
+    def set_attributes(self, log_statistics):
+        """
+        Calculate participant sub-score for this step.
+        """
+        # Initialize default values.
         self.score = 0
         self.score_details = ''
         ggr = 0
+        ggr_pw = 0
         rgr = 0
+        rgr_pw = 0
         gpp = 0
         gppd = ''
         rpp = 0
         rppd = ''
         xp = 0
         xpd = ''
-        # get on with the real work
+        # Then do the real work.
         if self.assignment['successor__id']:
-            self.successor = p_dict[a_dict[self.assignment['successor__id']]['participant__id']]
+            self.successor = p_dict[a_dict[
+                self.assignment['successor__id']
+                ]['participant__id']]
         if self.given_review:
             r = self.given_review
             a = a_dict[r['assignment__id']]
@@ -465,72 +507,168 @@ class Step(object):
             self.self_review = a_dict[r['assignment__id']]['is_selfie']
             self.rejection = self.assignment['is_rejected']
             ggr = r['grade']
-            # if the review was appealed, the actual grade may have been set by a referee
+            # NOTE: separate grade for predecessor's work need not be given.
+            ggr_pw = r.get('grade_pw', 0)
+            # If the review was appealed, the actual grade may have
+            # been set by a referee.
             if r['appeal']:
                 ap = r['appeal']
                 if ap['time_decided'] != DEFAULT_DATE:
-                    ggr = ap['grade']
-                    # for incurred appeals, the participant is the successor
+
+                    # temporary solution for storing two grades in the `grade` field
+                    x, ggr = divmod(ap['grade'], 256)
+                    if x > 0:
+                        ggr_pw = x
+                    # so ggr = original grade, ggr_pw grade for prior work
+
+                    # For incurred appeals, the participant is the successor.
                     gpp = ap['successor_penalty']
-                    # only display penalty points if non-zero (NOTE: negative indicates bonus)
+                    # Objection may override appeal decision. 
+                    ob = ob_dict.get(ap['id'], None)
+                    if ob and ob['time_decided'] != DEFAULT_DATE:
+                        # temporary solution for storing two grades in the `grade` field
+                        x, ggr = divmod(ob['grade'], 256)
+                        if x > 0:
+                            ggr_pw = x
+                        gpp = ob['successor_penalty']
+                    # Only display penalty points if non-zero.
+                    # NOTE: Negative value indicates bonus points.
                     if gpp != 0:
-                        gppd = signed_half_points(-gpp) + 'p'  # p for "Penalty"
-                    # print "successor penalty: %2.1f" % gpp
+                        # Add suffix "p" for "penalty".
+                        gppd = signed_half_points(-gpp) + 'p'
+        # Keep track of most critical review in case of multiple reviews.
+        mcr = None
         if self.received_reviews:
-            # for all but the final step, this means that no more reviews are expected
+            # For all but the final step, this means that no further
+            # reviews are expected.
             self.expected_reviews = []
-            # if multiple reviews, the lowest counts, or the instructor's (if any)
-            rgr = 10
+            # If multiple reviews, the lowest counts, or the instructor's.
+            rgr = 10  # <-- NOTE: initial value 10 used in test further down.
+            rgr_pw = 10 # Likewise treat grade for improved predecessor work.
             rpp = 0
             rppd = ''
             for r in self.received_reviews:
-                # if instructor review, this grade is binding (ignore appeals!)
-                if r['by_instructor']:
-                    rgr = r['grade']
-                    break
                 g = r['grade']
-                # if the review was appealed, the actual grade may have been set by a referee
+                g_pw = r.get('grade_pw', 0)
+                # If instructor review, this grade is binding, so
+                # ignore appeals by breaking out of the loop.
+                if r['by_instructor']:
+                    rgr = g
+                    rgr_pw = g_pw
+                    mcr = r
+                    break
+                # If the review was appealed, the actual grade may have
+                # been set by a referee.
                 if r['appeal']:
-                    # NOTE: do NOT overwrite previous appeal unless this appeal is decided
+                    # NOTE: Do NOT overwrite previous appeal unless this
+                    # appeal has been decided.
                     if r['appeal']['time_decided'] != DEFAULT_DATE:
                         ap = r['appeal']
-                        g = ap['grade']
-                        # for made appeals, the participant is the predecessor
-                        rpp += ap['predecessor_penalty']
-                        # only display penalty points if non-zero (NOTE: negative indicates bonus)
+                        x, g = divmod(ap['grade'], 256)
+                        if x:
+                            g_pw = x
+                        ppp = ap['predecessor_penalty']
+                        # Objection may override appeal decision. 
+                        ob = ob_dict.get(ap['id'], None)
+                        if ob and ob['time_decided'] != DEFAULT_DATE:
+                            x, g = divmod(ob['grade'], 256)
+                            if x:
+                                g_pw = x
+                            ppp = ob['predecessor_penalty']
+                        # For made appeals, the participant is the predecessor.
+                        rpp += ppp
+                        # Only display penalty points if non-zero.
+                        # (NOTE: negative indicates bonus)
                         if rpp != 0:
-                            rppd += signed_half_points(-ap['predecessor_penalty']) + 'p'
-                        # print "predecessor penalty: %2.1f" % rpp
-                #    if not ap:
-                #        # set ap if this is the first appeal, even if it is not decided yet
-                #        ap = r['appeal']  
-                rgr = min(g, rgr)
-            # calculate extra points (bonus/malus) for maintaining (good/bad) rating
-            if ggr == rgr:
+                            rppd += signed_half_points(-rpp) + 'p'
+                        # Referee / instructor decision is binding
+                        rgr = g
+                        rgr_pw = g_pw
+                        mcr = r
+                        break
+                # Update most critical review
+                if g > 0 and (g < rgr or (g == rgr and g_pw > 0 and g_pw < rgr_pw)):
+                    mcr = r
+                    # Prevent overwriting by undefined grade (0).
+                    if g > 0:
+                        rgr = min(g, rgr)
+                    if g_pw > 0:
+                        rgr_pw = min(g_pw, rgr_pw)
+            # NOTE: rgr still 10? Then received review was not submitted.
+            if rgr == 10:
+                # no points if not submitted yet.
+                rgr = 0
+                rgr_pw = 0
+                mcr = None
+            # Calculate bonus/malus points for maintaining (good/bad) rating.
+            # NOTE: this does not apply in the new 2020 scoring system
+            if scoring_system != 2 and ggr == rgr and rgr != 0:
                 xp = 0.5 * (ggr - 3)
                 if xp != 0:
-                    xpd = signed_half_points(xp) + 'c'  # c for "maintain Constant level"
+                    # Letter 'c' denotes "maintained Constant level".
+                    xpd = signed_half_points(xp) + 'c'
         if self.number == 1:
-            self.score = rgr
-            self.score_details = str(rgr)
+            # in ALL scoring systems, first step score equals received grade.
+            self.score = rgr - rpp
+            self.score_details = '{}{}'.format(rgr, rppd)
         elif self.given_review:
             if scoring_system == 1:
-                # received grades are "absolute"; improvement gives bonus; no malus
+                # NOTE: in scoring system #1 ("MOOC style"), received grades
+                # are "absolute"; improvement gives bonus; no malus.
                 if rgr > ggr:
                     xp = rgr - ggr
-                    xpd = '+%di'
+                    xpd = '+{}i'.format(xp)
                 else:
                     xp = 0
                     xpd = ''
                 self.score = rgr + xp - rpp - gpp
-                self.score_details = '%d%s%s%s' % (rgr, xpd, gppd, rppd)
+                self.score_details = '{}{}{}{}'.format(rgr, xpd, gppd, rppd)
+            elif scoring_system == 2:
+                # NOTE: in scoring system #2 ("2020 style"), participants
+                # give and receive 2 grades per step (Own and Previous), and
+                # their score is calculated as received O+P minus given O,
+                # or for Step 3 and beyond: minus given (O+P)/2.
+                if ggr_pw > 0:
+                    impr = rgr_pw - 0.5*(ggr + ggr_pw)
+                    # Also graded predecessor's improved work (so Step 3 or beyond).
+                    self.score = rgr + impr - gpp - rpp
+                    self.score_details = '{}+{}-&frac12;({}+{}){}{}'.format(
+                        rgr, rgr_pw, ggr, ggr_pw, gppd, rppd
+                        )
+                elif ggr > 0:
+                    # Predecessor, but no grade for improved work (so Step 2),
+                    # then only one grade given, so do not divide by 2.
+                    impr = rgr_pw - ggr
+                    self.score = rgr + impr - gpp - rpp
+                    self.score_details = '{}+{}-{}{}{}'.format(
+                        rgr, rgr_pw, ggr, gppd, rppd
+                        )
+                else:
+                    impr = 0
+                    self.score = rgr - rpp - gpp
+                    self.score_details = '{}{}{}'.format(rgr, gppd, rppd)
+                # Indicate improvement (if any) by superscript + or - after case letter.
+                if mcr:
+                    # Indicate improvement relative to most critical review.
+                    if impr > 0:
+                        mcr['improvement'] = '&#8314;'
+                    elif impr < 0:
+                        mcr['improvement'] = '&#8315;'
             else:
-                # default differential scoring method
+                # By default, use differential scoring method.
                 self.score = rgr - ggr + xp - rpp - gpp
-                self.score_details = '%d-%d%s%s%s' % (rgr, ggr, xpd, gppd, rppd)
-        # collect statistics on this step
+                self.score_details = '{}-{}{}{}{}'.format(
+                    rgr, ggr, xpd, gppd, rppd
+                    )
+        # In all scoring methods, rejection penalties can occur
+        #if self.rejection_penalties > 0:
+        #    log_message('Successor penalty for rejection: ' + self.rejection_penalty_details)
+        self.score -= self.rejection_penalties
+        self.score_details += self.rejection_penalty_details
+        # collect statistics on this step (only for individuals and team leaders)
         global stats
-        stats.data_point(self)
+        if log_statistics:
+            stats.data_point(self)
 
 
 # groups data on progress of a participant (to minimize database lookups)
@@ -538,6 +676,13 @@ class ParticipantProgress(object):
 
     def __init__(self, p, un, n, h):
         self.participant = p
+        # by default, not a referee
+        self.referee = False
+        self.appeals = 0
+        # by default, not member of a team (empty string)
+        self.team = ''
+        self.is_leader = False
+        self.separated = False
         # add dummy index to username (to differentiate between dummy students)
         if n[-1:] == ')':
             un += '(' + n.split('# ')[-1]
@@ -561,40 +706,68 @@ class ParticipantProgress(object):
         self.rblanks = []
         self.gblanks = []
         self.scan_status = ''
+        self.rejects = []
 
     def add_step(self, a):
         # cloned assignments and rejected assignments do not constitute a step for the participant
-        if not (a['clone_of'] or a['is_rejected']):
+        if a['is_rejected']:
+            # Show number of previous step, as that is the work that was rejected
+            rap_data = unicode(a['leg__number'] - 1) + a['case__letter']
+            rap = None
+            if a['predecessor__id']:
+                rap = p_dict.get(a_dict[a['predecessor__id']]['participant__id'], None)
+            if rap:
+                rap_data += ' (' + rap.name + ')'
+            else:
+                rap_data += ' (???)'
+            # The `rejects` string is shown as pop-up balloon on the dashboard
+            self.rejects.append(rap_data)
+        elif not a['clone_of']:
             self.steps.append(Step(a))
+
+    def did_upload_step(self, nr):
+        if len(self.steps) >= nr:
+            dtu = self.steps[nr - 1].assignment['time_uploaded']
+            if dtu > DEFAULT_DATE:
+                return timezone.localtime(dtu).strftime(SHORT_DATE_TIME)
+        return 'not uploaded yet'
 
     def gave_review(self, r):
         # NOTE: "double checking" patch to cope with (erroneously!) assigned reviews
         #       that relate to work in ANOTHER course relay
         if r['assignment__id'] not in a_dict.keys():
             return
-         # add display attributes to review
+         # Add display attributes to review.
         a = a_dict[r['assignment__id']]
         r['letter'] = a['case__letter']
+        r['improvement'] = ''
         r['reviewer_hex'] = self.hexed_id
         p = p_dict[a['participant__id']]
         r['receiver_hex'] = p.hexed_id
         if r['time_submitted'] == DEFAULT_DATE:
             dt = 'not submitted yet'
-        else:
+        elif r['is_rejection'] or r['final_review_index'] > 0:
             dt = timezone.localtime(r['time_submitted']).strftime(SHORT_DATE_TIME)
-        r['reviewer_popup'] = '%s (%s)' % (p_dict[r['reviewer__id']].name, dt)
+        else:
+            dt = self.did_upload_step(a['leg__number'] + 1)
+        r['reviewer_popup'] = '{} ({})'.format(
+            p_dict[r['reviewer__id']].name,
+            dt
+            )
         r['clone'] = a['clone_of'] != None
         if r['clone']:
             c = a_dict[a['clone_of']]
             p = p_dict[c['participant__id']]
-            r['receiver_popup'] = 'clone %s (%s)' % (p.name, dt)
+            r['receiver_popup'] = 'clone {} ({})'.format(p.name, dt)
             r['receiver_hex'] = p.hexed_id
         else:
-            r['receiver_popup'] = '%s (%s)' % (p.name, dt)
+            r['receiver_popup'] = '{} ({})'.format(p.name, dt)
         r['self_review'] = a_dict[r['assignment__id']]['is_selfie']
-        # assume that review has not been appealed
+        # Assume that review has not been appealed.
         r['appeal'] = None
-        if r['is_offensive']:
+        if r['improper_language']:
+            # Add warning sign and language scan status.
+            r['receiver_popup'] += ' &#9888; ' + r['improper_language']
             r['shadow'] = '; box-shadow: 0px 0px 3px 3px #0000a0 inset'
         else:
             r['shadow'] = ''
@@ -602,21 +775,21 @@ class ParticipantProgress(object):
             r['color'] = 'black'
         else:
             # color should reflect the given grade
-            r['color'] = ['', 'red', 'orange', 'yellow', 'olive', 'green'][r['grade']]
+            r['color'] = ICON_COLORS[r['grade']]
         r['icon'] = FACES[r['appraisal']]
         if r['time_appraised'] == DEFAULT_DATE:
-            r['icon_color'] = 'inverted'
+            r['icon_color'] = 'inverted grey'
             r['status'] = 'not appraised yet'
         else:
             dt = timezone.localtime(r['time_appraised']).strftime(SHORT_DATE_TIME)
             if r['is_appeal']:
-                r['icon'] = 'pointing up'
+                r['icon'] = FACES[4]
                 r['icon_color'] = 'inverted grey'
                 status = 'appealed'
             else:
                 r['icon_color'] = 'black' 
                 status = 'appraised'
-            r['status'] = '%s (%s)' % (status, dt)
+            r['status'] = '{} ({})'.format(status, dt)
         if r['final_review_index'] > 0:
             self.given_final_reviews.append(r)
         # ignore second opinions, instructor reviews, and also rejections, as these imply
@@ -626,13 +799,17 @@ class ParticipantProgress(object):
             self.steps[r['assignment__leg__number']].given_review = r
 
     def received_review(self, r):
-        if r['final_review_index'] > 0:
-            self.steps[r['assignment__leg__number'] - 1].received_reviews.append(r)
-        # ignore reviews of this participant's cloned assignments
-        elif not r['assignment__clone_of']:
-            # NOTE: received review is associated with the assignment's leg number,
-            # and since steps is a zero-based list, the correct index is this number minus 1
-            self.steps[r['assignment__leg__number'] - 1].received_reviews.append(r)
+        # NOTE: protect with TRY to be robust against errors due to manual database updates
+        try:
+            if r['final_review_index'] > 0:
+                self.steps[r['assignment__leg__number'] - 1].received_reviews.append(r)
+            # ignore reviews of this participant's cloned assignments
+            elif not r['assignment__clone_of']:
+                # NOTE: received review is associated with the assignment's leg number,
+                # and since steps is a zero-based list, the correct index is this number minus 1
+                self.steps[r['assignment__leg__number'] - 1].received_reviews.append(r)
+        except:
+            pass
 
     def is_appealed(self, ap):
         r = r_dict[ap['review__id']]
@@ -643,61 +820,111 @@ class ParticipantProgress(object):
             ref = ''
         # add the appeal icon, color and status fields to the review dictionary entry
         if ap['time_decided'] != DEFAULT_DATE:
+            x, grade = divmod(ap['grade'], 256)
             pp = ap['predecessor_penalty']
             sp = ap['successor_penalty']
+            dt = ap['time_decided']
+            r['icon'] = ''
+            if ap['is_contested_by_predecessor'] or ap['is_contested_by_successor']:
+                r['objection'] = True
+                r['icon'] = 'small circular ' 
+                # if not assigned to instructor yet, draw light gray circle around small hand icon
+                r['pending'] = '#c0c0c0'
+                # objection may override appeal decision 
+                ob = ob_dict.get(ap['id'], None)
+                if ob:
+                    ref = ob['referee'] + '&rarr;' + ref
+                    if ob['time_decided'] != DEFAULT_DATE:
+                        x, grade = divmod(ob['grade'], 256)
+                        pp = ob['predecessor_penalty']
+                        sp = ob['successor_penalty']
+                        dt = ob['time_decided']
+                        r['icon'] += 'inverted '
+                        r['pending'] = ''
+                    else:
+                        # assigned to instructor => draw dark gray circle around small hand icon
+                        r['pending'] = '#606060'
+            # NOTE: for a rejected assignment, the successor penalty must be
+            # recorded separately, as it will not appear in the successor's
+            # review list
+            if sp > 0 and r['is_rejection']:
+                log_message('Successor penalty for rejection: ' + self.name)
+                swar = self.steps[r['assignment__leg__number']]
+                swar.rejection_penalties += sp
+                swar.rejection_penalty_details += signed_half_points(-sp) + 'R'
+                # check for team members, as these should also incur the penalty
+                pteam = current_team(self.participant)
+                for tp in pteam:
+                    if tp != self.participant:
+                        # find the team partner participant
+                        tpp = p_dict[tp.id]
+                        swar = tpp.steps[r['assignment__leg__number']]
+                        swar.rejection_penalties += sp
+                        swar.rejection_penalty_details += signed_half_points(-sp) + 'R'
             # icon reflects type of referee decision
             if pp == 0 and sp == 0:
-                r['icon'] = 'handshake'
+                r['icon'] += FACES[8]
                 status = 'no penalties'
             elif pp == sp:
-                r['icon'] = 'pointing down'
-                status = '%s to both' % signed_half_points(-pp)
+                r['icon'] += FACES[5]
+                status = signed_half_points(-pp) + ' to both'
             else:
                 if pp > sp:
-                    r['icon'] = 'pointing left'
+                    r['icon'] += FACES[6]
                 else:
-                    r['icon'] = 'pointing right'
+                    r['icon'] += FACES[7]
                 if pp == 0:
-                    status = '%s for successor' % signed_half_points(-sp)
+                    status =  signed_half_points(-sp) + ' for successor'
                 elif sp == 0:
-                    status = '%s for predecessor' % signed_half_points(-pp)
+                    status = signed_half_points(-pp) + ' for predecessor'
                 else:
-                    status = 'mixed: %s / %s' % (signed_half_points(-pp), signed_half_points(-sp))
-            dt = ap['time_decided']
+                    status = 'mixed: {} / {}'.format(
+                        signed_half_points(-pp),
+                        signed_half_points(-sp)
+                        )
             # color reflects grade decided by referee
-            r['icon_color'] = ['', 'red', 'orange', 'yellow', 'olive', 'green'][ap['grade']]
-        elif ap['time_first_viewed'] != DEFAULT_DATE:
-            r['icon'] = 'pointing up'
+            r['icon_color'] = ICON_COLORS[grade]                
+        elif ap['time_first_viewed']:
+            r['icon'] = FACES[4]
             r['icon_color'] = 'black'
             status = 'case opened'
             dt = ap['time_first_viewed']
         elif r['time_appeal_assigned'] != DEFAULT_DATE:
-            r['icon'] = 'pointing up'
+            r['icon'] = FACES[4]
             r['icon_color'] = 'grey'
             status = 'case assigned'
             dt = r['time_appeal_assigned']
         else:
-            r['icon'] = 'pointing up'
+            r['icon'] = FACES[4]
             r['icon_color'] = 'inverted grey'
             status = 'appealed'
             dt = r['time_appraised']
-        r['status'] = '%s (%s%s)' % (status, ref, timezone.localtime(dt).strftime(SHORT_DATE_TIME))
+        r['status'] = '{} ({}{})'.format(
+            status,
+            ref,
+            timezone.localtime(dt).strftime(SHORT_DATE_TIME)
+            )
 
     def set_attributes(self, nr, legs, final_reviews):
-        # print "Setting attributes for %s" % self.name
+        # NOTE: nr is participant number (used in HTML view to enumerate the table rows)
         self.nr = nr
+        log_stats = not self.team or (self.is_leader and not self.separated) 
         # set the attributes for each of the steps this participant has made so far
         for s in self.steps:
-            s.set_attributes()
+            s.set_attributes(log_stats)
             if s.number == legs:
                 s.expected_reviews = range(0, final_reviews - len(s.received_reviews))
-        # the progress attribute expresses the participant's advancement as a percentage (100% = done)
-        # the score attribute calculates the participant's total number of "estafette points"
-        # print "Calculating progress for %s" % self.name
-        p = 0  # zero progress indicates: not started, i.e. not yet accepted the "rules of the game"
+        # The progress attribute expresses the participant's advancement as a
+        # percentage (100% = done).
+        # The score attribute calculates the participant's total number of
+        # "relay points".
+        # Zero progress indicates: not started, i.e., not yet accepted the
+        # "rules of the game".
+        p = 0  
         self.score = 0
         self.completed_steps = 0
-        bonus = 0  # bonus is scored if step was uploaded "early" (explained below)
+        # bonus is scored if step was uploaded "early" (explained below)
+        bonus = 0
         self.score_details = ''
         gr_count = 0 # count number of given reviews (ignoring rejections) to later calculate blanks
         for s in self.steps:
@@ -712,31 +939,41 @@ class ParticipantProgress(object):
                 if s.given_review['time_submitted'] != DEFAULT_DATE:
                     p += 1   # submitting it is a second step forward
             self.score += s.score
-            if s.assignment['time_uploaded'] != DEFAULT_DATE and speed_bonus > 0:
-                if bonus_per_step:
-                    # award absolute bonus if step was uploaded within good time, i.e.,
-                    # (1) calculate how much time the participant used for this step 
-                    taken_time = s.assignment['time_uploaded'] - s.assignment['time_assigned']
-                    # (2) calculate time between time assigned and assignments deadline MINUS 24 hrs
-                    remaining_time = bonus_deadline - s.assignment['time_assigned']
-                    # (3) calculate nominal time as remaining time / remaining steps
-                    nominal_time = remaining_time / (legs - s.number + 1)
-                    # (4) award bonus only if user used less than nominal time to upload
-                    if taken_time <= nominal_time:
-                        bonus += speed_bonus
-                        print "bonus = %1.3f" % bonus
-                elif s.assignment['time_uploaded'] <= half_way:
-                    # relative bonus for each assignment uploaded before half of the duration
-                    bonus += speed_bonus * s.score
+            if s.assignment['time_uploaded'] != DEFAULT_DATE:
+                # (1) calculate how much time the participant used for this step 
+                taken_time = s.assignment['time_uploaded'] - s.assignment['time_assigned']
+                # set the "hasty work" flag if the time spent is less than twice (!) the minimum time
+                if taken_time.total_seconds() < 2 * 60 * s.assignment['leg__min_upload_minutes']:
+                    s.hasty_work = '; box-shadow: 0px 0px 3px 3px #ffffff inset'
+                if speed_bonus > 0:
+                    if bonus_per_step:
+                        # NOTE: until 1-11-2019, speed bonus deadlines were individually computed
+                        if self.participant.estafette.end_time < UPDATE_2019:
+                            # award absolute bonus if step was uploaded within good time, i.e.,
+                            # (2) calculate time between time assigned and assignments deadline MINUS 24 hrs
+                            remaining_time = bonus_deadline - s.assignment['time_assigned']
+                            # (3) calculate nominal time as remaining time / remaining steps
+                            nominal_time = remaining_time / (legs - s.number + 1)
+                            # (4) award bonus only if user used less than nominal time to upload
+                            if taken_time <= nominal_time:
+                                bonus += speed_bonus
+                        else:
+                            # since then, speed bonus deadlines are fixed for each relay
+                            # NOTE: speed bonus deadlines are computed as global variable to save time
+                            if (s.assignment['time_uploaded'] <=
+                                bonus_deadline_dict.get(s.number, DEFAULT_DATE) + GRACE_MINUTE):
+                                bonus += speed_bonus
+    
+                    elif s.assignment['time_uploaded'] <= half_way:
+                        # relative bonus (score multiplier!) for each assignment uploaded before half of the duration
+                        bonus += speed_bonus * s.score
             self.scan_status += s.scan_status
-            # print "up to step %d: p=%d, score=%2.1f" % (s.number, p, self.score)
-        # indicate whether participant is eligible for a grade
-        self.eligible = self.completed_steps >= nr_of_legs - 1
+
         # compile score details in a single string
         self.score_details = ' + '.join([s.score_details for s in self.steps])
         if speed_bonus:
-            bonus = round(2*bonus + 0.25) / 2  # round in favor of student to nearest half point
             if bonus:
+                bonus = round(2*bonus + 0.25) / 2  # round in favor of student to nearest half point
                 self.score += bonus
                 self.score_details += ' ' + signed_half_points(bonus) + 's'  # 's' for speed
         # given final reviews can also affect score (extra points and penalties)
@@ -744,55 +981,66 @@ class ParticipantProgress(object):
         xpd = ''
         pp = 0
         ppd = ''
+        gfr = 0
         for r in self.given_final_reviews:
-            g = r['grade']
-            # if the review was appealed, the actual grade may have been set by a referee
-            if r['appeal']:
-                ap = r['appeal']
-                if ap['time_decided'] != DEFAULT_DATE:
-                    g = ap['grade']
-                    # for incurred appeals, the participant is the successor
-                    pp += ap['successor_penalty']
-                    # only display penalty points if non-zero (NOTE: negative indicates bonus)
-                    if pp != 0:
-                        ppd += signed_half_points(-ap['successor_penalty']) + 'p'
-            # if lost appeal, no bonus; otherwise see if same assignment has received other reviews
-            if pp <= 0:
-                # find the participant who submitted the reviewed assignment
-                op = p_dict[a_dict[r['assignment__id']]['participant__id']]
-                # print "Final review of %s..." % op.name
-                orr = op.steps[legs - 1].received_reviews
-                # extra points only possible if more than one review was received
-                if len(orr) > 1:
-                    # prepare to find the lowest rating of this assignment
-                    low_g = g
-                    bonus = 0.5  # half point if all others gave the same rating
-                    # iterate through the reviews received for this final step
-                    for rr in orr:
-                        # print " - reviewed by %s..." % p_dict[rr['reviewer__id']].name
-                        og = rr['grade']
-                        # correct other reviewer's rating if the review was appealed
-                        if rr['appeal']:
-                            if rr['appeal']['time_decided'] != DEFAULT_DATE:
-                                og = rr['appeal']['grade']
-                        # compare the ratings to obtain the lowest
-                        if og > g:
-                            bonus = 1  # full point if at least one other gave higher rating
-                        else:
-                            low_g = og
-                    # bonus is earned by the most critical reviewer
-                    if g == low_g:
-                        xp += bonus
-                        xpd += signed_half_points(bonus) + 'r'  # r for Review
-                    # print "FINAL review bonus: %s" % xpd
+            # NOTE: skip if review was not submitted!
+            if r['time_submitted'] != DEFAULT_DATE:
+                # count this review as "given"
+                gfr += 1
+                g = r['grade']
+                referee_grade = False
+                # if the review was appealed, the actual grade may have been set by a referee
+                if r['appeal']:
+                    ap = r['appeal']
+                    if ap['time_decided'] != DEFAULT_DATE:
+                        # NOTE: if lost appeal or grade modified by referee, no bonus
+                        referee_grade = (g != ap['grade'] or ap['successor_penalty'] > 0)
+                        g = ap['grade']
+                        # for incurred appeals, the participant is the successor
+                        pp += ap['successor_penalty']
+                        # only display penalty points if non-zero (NOTE: negative indicates bonus)
+                        if pp != 0:
+                            ppd += signed_half_points(-ap['successor_penalty']) + 'p'
+                # if own review is not overruled, see if same assignment has received other reviews
+                if not referee_grade:
+                    # find the participant who submitted the reviewed assignment
+                    op = p_dict[a_dict[r['assignment__id']]['participant__id']]
+                    # make a list of all SUBMITTED final reviews received by this participant
+                    orr = []
+                    for rr in op.steps[legs - 1].received_reviews:
+                        if rr['time_submitted'] != DEFAULT_DATE:
+                            orr.append(rr)
+                    if len(orr) > 0:
+                        # prepare to find the lowest rating of this assignment
+                        low_g = g
+                        # assume no referee grade
+                        referee_grade = False
+                        bonus = 0.5  # half point if all others gave the same rating
+                        # iterate through the reviews received for this final step
+                        for rr in orr:
+                            og = rr['grade']
+                            # correct other reviewer's rating if the review was appealed
+                            if rr['appeal']:
+                                if rr['appeal']['time_decided'] != DEFAULT_DATE:
+                                    og = rr['appeal']['grade']
+                                    referee_grade = og
+                            # compare the ratings to obtain the lowest
+                            if og > g:
+                                bonus = 1  # full point if at least one other gave higher rating
+                            else:
+                                low_g = og
+                        # bonus is earned by being the most critical reviewer, or concurring with the referee
+                        if (referee_grade and g == referee_grade) or (not referee_grade and g == low_g):
+                            xp += bonus
+                            xpd += signed_half_points(bonus) + 'r'  # r for Review
         # add points to score and score details
         self.score += xp - pp
         self.score_details += xpd + ppd
-        # print "FINAL score: %2.1f (%s)" % (self.score, self.score_details)
                 
         # to keep nice progress percentages, each final review counts as 5%
         all_steps = 100 - 5 * final_reviews
-        self.progress = int(floor(p * all_steps / (legs * 4 - 2)) + 5 * len(self.given_final_reviews))
+        # each step can generate 4 "progress steps" except for the first (does not have the 2 review actions)
+        self.progress = int(floor(p * all_steps / (legs * 4 - 2)) + 5 * gfr)
         if self.progress < all_steps:
             self.progress_color = 'blue'
         elif self.progress == 100:
@@ -804,11 +1052,23 @@ class ParticipantProgress(object):
             self.rblanks = range(0, legs - len(self.steps) + final_reviews - 1)
         self.gblanks = range(0, legs - gr_count + final_reviews - len(self.given_final_reviews) - 1)
 
+        # indicate whether participant is eligible for a grade
+        # NOTE: Until 1-11-2019, this was when all but 1 steps were completed.
+        #       Now, ALL steps must be completed
+        if self.participant.estafette.end_time < UPDATE_2019:
+            self.eligible = int(self.completed_steps >= nr_of_legs - 1)
+            self.finished = int(self.completed_steps >= nr_of_legs)
+        else:
+            self.eligible = int(self.completed_steps >= nr_of_legs)
+            self.finished = int(gfr >= final_reviews)
+
 
 # view for course page that processes POST data with own CSRF protection (using encode/decode)
 @method_decorator(csrf_exempt, name='dispatch')
 @login_required(login_url=settings.LOGIN_URL)
 def course_estafette(request, **kwargs):
+    # count queries
+    q_count = len(connection.queries)
     h = kwargs.get('hex', '')
     context = generic_context(request, h)
     # check whether user can view this course_estafette
@@ -819,7 +1079,7 @@ def course_estafette(request, **kwargs):
                 or ce.course.instructors.filter(id=context['user'].id)):
             log_message('ACCESS DENIED: Invalid course estafette parameter', context['user'])
             return render(request, 'presto/forbidden.html', context)
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
 
@@ -853,6 +1113,7 @@ def course_estafette(request, **kwargs):
     global speed_bonus
     global bonus_per_step
     global bonus_deadline
+    global bonus_deadline_dict
     global scoring_system
 
     # if non-zero, speed bonus B makes that points earned in the first half
@@ -863,10 +1124,15 @@ def course_estafette(request, **kwargs):
     # if bonus_per_step is TRUE, participants earn B points for each step i (of n steps) that they
     # complete within the 1/(n - i) fraction of the remaining time until the deadline minus 1 day
     # (i.e., no speed bonus on the last day of a relay)
+    # NOTE: per 1-11-2019, this system has been replaced by fixed speed bonus deadlines
     bonus_per_step = ce.bonus_per_step
+    if bonus_per_step:
+        bonus_deadline_dict = ce.bonus_deadlines()
     bonus_deadline = ce.deadline - timedelta(days=1)
     
-    # scoring system: 0 = relative differential; 1 = absolute with differential bonus
+    # scoring system: 0 = relative differential;
+    #                 1 = absolute with differential bonus
+    #                 2 = new 2020 system with separate grade for previous work
     scoring_system = ce.scoring_system
     
     # add hex of this course estafette (used in action URL of settings form)
@@ -878,14 +1144,13 @@ def course_estafette(request, **kwargs):
     # see if the settings form was submitted
     if request.POST.get('s-time', ''):
         try:
-            tz = timezone.get_current_timezone()
-            sdt = tz.localize(datetime.strptime(
+            sdt = timezone.make_aware(datetime.strptime(
                 string_to_datetime(request.POST.get('s-time', '')), SHORT_DATE_TIME))
-            ddt = tz.localize(datetime.strptime(
+            ddt = timezone.make_aware(datetime.strptime(
                 string_to_datetime(request.POST.get('d-time', '')), SHORT_DATE_TIME))
-            fdt = tz.localize(datetime.strptime(
+            fdt = timezone.make_aware(datetime.strptime(
                 string_to_datetime(request.POST.get('f-time', '')), SHORT_DATE_TIME))
-            edt = tz.localize(datetime.strptime(
+            edt = timezone.make_aware(datetime.strptime(
                 string_to_datetime(request.POST.get('e-time', '')), SHORT_DATE_TIME))
             qt = request.POST.get('questionnaire', '')
             if qt:
@@ -930,7 +1195,7 @@ def course_estafette(request, **kwargs):
             ce.is_hidden = ih
             ce.save()
             inform_user(context, 'Relay settings have been changed')
-        except ValueError, e:
+        except ValueError as e:
             warn_user(context, 'Invalid input', str(e))
 
     # for the estafette form add the list of available evaluation questionnaires
@@ -982,8 +1247,11 @@ def course_estafette(request, **kwargs):
             'info circle',
             'Qualified as referee',
             'As instructor you qualify for all steps of this estafette.'
-        ])
-        log_message('Qualified as referee for %s (n=%d)' % (unicode(ce), n), context['user'])
+            ])
+        log_message(
+            'Qualified as referee for {} (n={})'.format(unicode(ce), n),
+            context['user']
+            )
 
     # for database efficiency, avoid queries within the main loop
     context.update({
@@ -997,18 +1265,24 @@ def course_estafette(request, **kwargs):
         'e_time': timezone.localtime(ce.end_time).strftime(SHORT_DATE_TIME),
         'participant_count': Participant.objects.filter(
             estafette=ce, student__dummy_index__gt=-1).count(),
-        'active_count': Participant.objects.filter(estafette=ce, student__dummy_index__gt=-1
-            ).filter(time_last_action__gte=timezone.now() - timedelta(days=1)).count()
+        'active_count': Participant.objects.filter(
+            estafette=ce, student__dummy_index__gt=-1
+            ).filter(
+            time_last_action__gte=timezone.now() - timedelta(days=1)
+            ).count(),
+        'pending_decisions': ce.pending_decisions()
     })
     # add url for chart image
     context['chart_url'] = 'progress/ce/' + encode(ce.id, context['user_session'].encoder)
 
     # the dictionaries are assigned to, so they must be declared as global
-    global ref_dict # referees
-    global p_dict   # participants
-    global a_dict   # assignments
-    global r_dict   # reviews
-    global ap_dict  # appeals
+    global ref_dict      # referees
+    global ref_case_dict # case count per referee
+    global p_dict        # participants
+    global a_dict        # assignments
+    global r_dict        # reviews
+    global ob_dict       # objections
+    global ap_dict       # appeals
 
     # to display aliases of "focused" demo-users, collect aliases of related course students
     # as a dictionary with course student ID as key and alias as value
@@ -1016,7 +1290,7 @@ def course_estafette(request, **kwargs):
     usl = UserSession.objects.all()
     for us in usl:
         uss = loads(us.state)
-        if uss.has_key('alias'):
+        if 'alias' in uss:
             demo_aliases[uss['course_student_id']] = uss['alias']
     
     # create a dict with all referees qualified for this course estafette, idexed by their ID
@@ -1024,6 +1298,18 @@ def course_estafette(request, **kwargs):
     ref_dict = {}
     for r in q_set:
         ref_dict[r.id] = prefixed_user_name(r.user)
+
+    # create a dict to count the appeals assigned to referees (by their name!)
+    # NOTE: entries are dicts {assigned: n, undecided: m}
+    rnl = list(set([ref_dict[k] for k in ref_dict.keys()]))
+    ref_case_dict = {}
+    for rn in rnl:
+        ref_case_dict[rn] = {'assigned': 0, 'undecided': 0}
+
+    # register lead students for this relay
+    tla = team_leaders_added_to_relay(ce)
+    if tla:
+        inform_user(context, 'Lead students added as participants', 'Student name(s): ' + tla)
 
     # get all participants in this course estafette
     q_set = Participant.objects.filter(estafette=ce).exclude(deleted=True
@@ -1036,70 +1322,158 @@ def course_estafette(request, **kwargs):
         # do not use function dummy_name() so as not to access the database 
         if p.student.dummy_index > 0:
             if p.student.id in demo_aliases:
-                di = ' (%s)' % demo_aliases[p.student.id]
+                di = ' (' + demo_aliases[p.student.id] + ')'
             elif p.student.particulars:
-                di = ' (%s)' % p.student.particulars
+                di = ' (' + p.student.particulars + ')'
             else:
-                di = ' (dummy # %d)' % p.student.dummy_index
+                di = ' (dummy # {})'.format(p.student.dummy_index)
         elif p.student.dummy_index < 0:
             di = INSTRUCTOR_SUFFIX
             ipids.append(p.id)
         else:
             di = ''
-        p_dict[p.id] = ParticipantProgress(p, p.student.user.username,
-            '%s%s' % (prefixed_user_name(p.student.user), di),
-            encode(p.id, context['user_session'].encoder))
+        p_dict[p.id] = ParticipantProgress(
+            p,
+            p.student.user.username,
+            prefixed_user_name(p.student.user) + di,
+            encode(p.id, context['user_session'].encoder)
+            )
+
+    # get the team lookup dict
+    team_dict = team_lookup_dict(ce)
+    # NOTE: This dict has as keys the participant IDs for all participants who have teamed up,
+    #       with leading participants having a list of member participant IDs, and member
+    #       participants just the ID of the leading participant.
+    #       This data suffices to make a complete team string for each teamed up participant.
+    t_now = timezone.now()
+    for pid in p_dict.keys():
+        t_entry = team_dict.get(pid, None)
+        if t_entry:
+            if type(t_entry) is list:
+                lpid = pid
+                p_dict[pid].is_leader = True
+            else:
+                lpid = t_entry
+                t_entry = team_dict.get(lpid, None)
+            n_list = [p_dict[lpid].name]
+            for tpl in t_entry:
+                mpn = p_dict[tpl[0]].name
+                if t_now >= tpl[1]:
+                    mpn += (' (until '
+                        + datetime.strftime(tpl[1], SHORT_DATE_TIME) + ')'
+                        )
+                n_list.append(mpn)
+            # add the team description string to the participant's attributes dict
+            p_dict[pid].team = ', '.join(n_list)
+            p_dict[pid].separated = '(until ' in p_dict[pid].team
 
     # construct assignment list while adding each assignment to the list of the associated participant
     q_set = Assignment.objects.filter(participant__in=p_dict.keys()
         ).distinct().select_related('case', 'leg', 'participant'
         ).order_by('time_assigned'
-        ).values('id', 'participant__id', 'leg__number', 'case__letter', 'is_selfie', 'clone_of',
+        ).values('id', 'participant__id',
+        'leg__number', 'leg__min_upload_minutes',
+        'case__letter', 'is_selfie', 'clone_of',
         'time_assigned', 'time_uploaded', 'is_rejected', 'predecessor__id', 'successor__id',
         'time_scanned', 'scan_result')
     a_dict = {}
     for a in q_set:
         a_dict[a['id']] = a
-        p_dict[a['participant__id']].add_step(a)
+        pid = a['participant__id']
+        p_dict[pid].add_step(a)
+        # also add this same assignment as step for team members
+        tl = team_dict.get(pid, [])
+        if type(tl) is list:
+            for tpl in tl:
+                if a['time_uploaded'] < tpl[1]:
+                    p_dict[tpl[0]].add_step(a)
 
     # add reviews to reviewer's "given" list and receiver's "received" list
-    q_set = PeerReview.objects.filter(reviewer__in=p_dict.keys()
-        ).distinct().order_by('assignment__leg__number', 'time_submitted'
-        ).values('id', 'assignment__id', 'assignment__participant__id', 'assignment__leg__number',
-            'assignment__clone_of', 'reviewer__id', 'final_review_index', 'grade', 'is_rejection',
-            'is_second_opinion', 'time_first_download', 'time_submitted', 'appraisal',
-            'improvement_appraisal', 'time_appraised', 'is_offensive', 'is_appeal',
-            'time_appeal_assigned')
+    q_set = PeerReview.objects.filter(
+        reviewer__in=p_dict.keys()
+        ).distinct().order_by(
+        'assignment__leg__number', 'time_submitted'
+        ).values(
+        'id', 'assignment__id', 'assignment__participant__id',
+        'assignment__leg__number', 'assignment__clone_of', 'reviewer__id',
+        'final_review_index', 'grade', 'is_rejection', 'is_second_opinion',
+        'time_first_download', 'time_submitted', 'appraisal',
+        'improvement_appraisal', 'time_appraised', 'improper_language',
+        'is_appeal', 'time_appeal_assigned'
+        )
     r_dict = {}
     for r in q_set:
+        rev_pid = r['reviewer__id']
         # add field indicating whether review is a post-review by an instructor
-        r['by_instructor'] = r['reviewer__id'] in ipids
+        r['by_instructor'] = rev_pid in ipids
         r_dict[r['id']] = r
-        p_dict[r['reviewer__id']].gave_review(r)
-        # NOTE: "double checking" patch to cope with (erroneously!) assigned reviews
-        #       that relate to work in ANOTHER course relay
-        if r['assignment__participant__id'] in p_dict.keys():
-            p_dict[r['assignment__participant__id']].received_review(r)
+        p_dict[rev_pid].gave_review(r)
+        # also add this same assignment as step for team members
+        tl = team_dict.get(rev_pid, [])
+        if type(tl) is list:
+            for tpl in tl:
+                p_dict[tpl[0]].gave_review(r)
+        rec_pid = r['assignment__participant__id']
+        if not (rec_pid in p_dict.keys()):
+            # NOTE: "double checking" patch to cope with (erroneously!) assigned reviews
+            #       that relate to work in ANOTHER course relay
+            log_message('Review of unknown participant: ' + str(r), context['user'])
         else:
-            log_message('Unknown key: %s' % str(r), context['user'])
+            p_dict[rec_pid].received_review(r)
+            # also add this same assignment as step for team members
+            tl = team_dict.get(rec_pid, [])
+            if type(tl) is list:
+                for tpl in tl:
+                    p_dict[tpl[0]].received_review(r)
 
+    # construct list of predecessor work ratings
+    # NOTE: list should be empty if such items are not specified by the review template
+    q_set = ItemReview.objects.filter(
+        review__in=r_dict.keys(), item__appraisal='rating:5:star'
+        ).distinct().order_by(
+        'review__id'
+        ).values(
+        'review__id', 'rating'
+        )
+    # non-empty list => new scoring system (2)
+    if q_set:
+        scoring_system = 2
+    # for all items found, add their rating as a field to the review dict
+    for ir in q_set:
+        r_dict[ir['review__id']]['grade_pw'] = ir['rating']
 
-
-    #for r in PeerReview.objects.filter(reviewer__in=p_dict.keys()):
-    #    offense = r.check_offensiveness()
-    #    if offense:
-    #        log_message('Language issue: ' + offense, context['user'])
+    # add list of objections for this estafette
+    q_set = Objection.objects.filter(appeal__review__in=r_dict.keys()
+        ).distinct().values('id', 'referee__id', 'appeal__id',
+            'time_decided', 'grade', 'predecessor_penalty', 'successor_penalty')
+    ob_dict = {}
+    for ob in q_set:
+        # add the referee's name
+        ob['referee'] = ref_dict[ob['referee__id']]
+        # NOTE: use the APPEAL ID as index to facilitate lookup
+        ob_dict[ob['appeal__id']] = ob
 
     # add list of appeals for this estafette
     q_set = Appeal.objects.filter(review__in=r_dict.keys()
-        ).distinct().values('id', 'referee__id', 'review__id', 'appeal_type', 'time_first_viewed',
-            'time_decided', 'grade', 'predecessor_penalty', 'successor_penalty',
+        ).distinct().values(
+            'id', 'referee__id', 'review__id', 'appeal_type',
+            'time_first_viewed', 'time_decided', 'grade',
+            'predecessor_penalty', 'successor_penalty',
             'time_acknowledged_by_predecessor','time_acknowledged_by_successor',
             'predecessor_appraisal', 'successor_appraisal',
-            'is_contested_by_predecessor', 'is_contested_by_successor')
+            'is_contested_by_predecessor', 'is_contested_by_successor'
+            )
     ap_dict = {}
     for ap in q_set:
         ap['referee'] = ref_dict[ap['referee__id']]
+        # Increment the case counter for this referee.
+        ref_case_dict[ap['referee']]['assigned'] += 1
+        # If case not decided, also increment the undecided case couter.
+        if ap['time_decided'] == DEFAULT_DATE:
+            ref_case_dict[ap['referee']]['undecided'] += 1
+        # NOTE: Set to false to prohibit display of default date.
+        if ap['time_first_viewed'] == DEFAULT_DATE:
+            ap['time_first_viewed'] = False
         ap_dict[ap['id']] = ap
         p_dict[r_dict[ap['review__id']]['reviewer__id']].is_appealed(ap)
 
@@ -1115,6 +1489,9 @@ def course_estafette(request, **kwargs):
     context['participants'] = []
     for p in p_dict:
         p_dict[p].set_attributes(p_nr, nr_of_legs, ce.final_reviews)
+        p_dict[p].referee = p_dict[p].name in ref_case_dict.keys()
+        p_dict[p].appeals = ref_case_dict.get(
+            p_dict[p].name, {'assigned': 0, 'undecided': 0})
         p_nr += 1
         context['participants'].append(p_dict[p])
 
@@ -1127,8 +1504,17 @@ def course_estafette(request, **kwargs):
     if has_role(context, 'Administrator'):
         context['can_download'] = True
 
-    # finally, return the rendered template
-    context['page_title'] = 'Presto Course Relay' 
-    return render(request, 'presto/course_estafette.html', context)
+    # log # queries performed for this view (NOTE: works only if settings.DEBUGGING = True)
+    if q_count > 0:
+        log_message(
+            '{} queries performed to generate dashboard'.format(
+                len(connection.queries) - q_count
+                ),
+            context['user']
+            )
 
+    # finally, return the rendered template
+    context['page_title'] = 'Presto Course Relay'
+    context['scoring_system'] = scoring_system
+    return render(request, 'presto/course_estafette.html', context)
 

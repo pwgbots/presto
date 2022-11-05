@@ -1,9 +1,11 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+General utility functions used by other Presto modules.
+
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,21 +25,14 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-# utils.py: general utility functions used in almost every Django view
-#
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 
 import io
 import os
 import re
-import socket
 import subprocess
 
-from datetime import date, time, datetime
+from datetime import date, datetime, time, timedelta
 from hashlib import md5
 from math import fabs, modf
 from random import randrange
@@ -46,7 +41,8 @@ from string import hexdigits
 # frequently used constants
 DATE_TIME_FORMAT = '%A, %d %B %Y %H:%M'
 DATE_FORMAT = '%A, %d %B %Y'
-EDIT_STRING = 'Last edited by %s on %s.'
+EDIT_STRING = 'Last edited by {name} on {time}.'
+GRACE_MINUTE = timedelta(seconds=60)
 
 # NOTE: session keys are tested in three stages:
 #       (1) not the required 32 hex digit format => incorrect
@@ -56,14 +52,37 @@ EXPIRED_SESSION_KEY = 'Your session has expired'
 INCONSISTENT_SESSION_KEY = 'Inconsistent session key'
 INCORRECT_SESSION_KEY = 'Incorrect session key'
 
-FACES = ['grey help circle outline', 'smile', 'meh', 'frown']
+# Semantic UI icon names expressing opinions:
+FACES = [
+    'grey question circle outline',
+    'smile outline',
+    'meh outline',
+    'frown outline',
+    'pointing up outline',
+    'pointing down outline',
+    'pointing left outline',
+    'pointing right outline',
+    'handshake outline'
+    ]
+
+# Colors to mark decision appreciation segments:
+COLORS = ['', 'green', 'yellow', 'red']
+
+# UI phrase keys expressing opinions:
+OPINIONS = ['ERROR', 'Quite_happy', 'Mixed_feelings', 'Unhappy']
+YOUR_OPINIONS = ['ERROR', 'You_quite_happy', 'Mixed_feelings', 'You_unhappy']
+IMPROVEMENTS = ['Pass', 'No_improvement', 'Minor_changes', 'Good_job']
 
 
 # infers last name prefix of user from TU Delft e-mail address
 def prefixed_user_name(user):
+    if not user:
+        return ''
+    if user.first_name == 'Presto' and user.last_name == 'Administrator':
+        return user.get_full_name()
     e = user.email.split('@')
     # assume that only TU Delft uses the e-mail format INITIALS-prefix-LAST NAME
-    if 'tudelft.nl' not in e[1]:
+    if len(e) < 2 or 'tudelft.nl' not in e[1]:
         return user.get_full_name()
     # strip initials, split at upper case characters, and retain the leading lower case string
     n = e[0].strip('0123456789-').split('.')[-1]
@@ -80,22 +99,25 @@ def prefixed_user_name(user):
             p = "d'"
         elif p[-1] != ' ':
             p += ' '
-    return '%s %s%s' % (user.first_name, p, user.last_name)    
+    # NOTE: for some students, their first name also included their last name (data entry error?)
+    #       so check if last name is identical to right part of first name of equal length
+    fn = user.first_name
+    ln = user.last_name
+    if fn[-len(ln):] == ln:
+        fn = fn.replace(ln, '').strip()
+    return fn + ' ' + p + ln    
 
 
 # writes message to log file.
 def log_message(msg, user=None):
     dt = datetime.now().strftime('%Y-%m-%d  %H:%M:%S')
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 1))  # connect() for UDP doesn't send packets
-        ip = s.getsockname()[0]
-    except:
-        ip = 'no IP'
     usr = 'anonymous' if user is None else prefixed_user_name(user)
-    log_line = '%s [%s] [%s] %s\n' % (dt, ip, usr, msg)
+    log_line = '{} [{}] [{}] {}\n'.format(dt, settings.USER_IP, usr, msg)
     # print log_line
-    path = os.path.join(settings.LOG_DIR, 'presto-%s.log' % datetime.today().strftime('%Y%m%d'))
+    path = os.path.join(
+        settings.LOG_DIR,
+        'presto-' + datetime.today().strftime('%Y%m%d') + '.log'
+        )
     with io.open(path, 'a+', encoding='utf-8') as logfile:
         logfile.write(log_line)
 
@@ -248,9 +270,13 @@ def os_path(path):
     return os.path.join(*path)
 
 
-# converts a floating point number rounded to the nearest half as a string (HTML)
-# NOTE: ignores the sign, i.e., uses the absolute value of f
 def half_points(f):
+    """
+    Returns a string with float rounded to nearest 0,5 written as a fraction.
+
+    Uses HTML entity &frac12; to denote for 1/2.
+    Ignores the sign, i.e., uses the absolute value of f.
+    """
     fp, ip = modf(fabs(float(f)))
     w = '' if ip == 0 else str(int(ip))
     h = '&frac12;' if 0.25 <= fp < 0.75 else ''
@@ -283,7 +309,7 @@ def disk_usage(path):
 def plural_s(n, phrase):
     if n == 1:
         return '1 ' + phrase
-    return '%d %ss' % (n, phrase)
+    return '{} {}s'.format(n, phrase)
 
 
 # converts a positive integer into a base36 string
@@ -307,3 +333,60 @@ def word_count(s):
     if s:
         return len(s.split())
     return 0
+
+
+def ui_img(s):
+    return s.replace('<img ', '<img class="ui large image" ')
+
+
+def pdf_to_text(path):
+    """
+    Extract text from PDF as 7-bit ASCII.
+    """
+    try:
+        # On Windows, change to the directory where the application is
+        # installed, or check_output throws an "Access denied" error.
+        cwd = ''
+        if settings.PDF_TO_TEXT_DIR:
+            # save corrent working directory
+            cwd = os.getcwd()
+            # temporarily move to the directory containing pdftotext.exe
+            os.chdir(settings.PDF_TO_TEXT_DIR)
+            
+        cmd = [settings.PDF_TO_TEXT_CMD, '-enc', 'ASCII7', path, '-']
+        ascii = subprocess.check_output(cmd)
+
+        # If changed, change back to the original current working directory.
+        if cwd:
+            os.chdir(cwd)
+
+        # Remove all footers, assuming that these are single short lines
+        # (typically "Page #" or just "#") that immediately preced a page
+        # separator (form feed).
+        pages = ascii.split('\f')
+        ascii = ''
+        # See what line separator is used.
+        if pages:
+            newline = '\r\n'
+            if not (newline in pages[0]):
+                newline = '\n'
+        # Add page text without footer text.
+        for p in pages:
+            pars = p.split(newline)
+            # Discard trailing blank lines.
+            while pars and len(pars[-1]) == 0:
+                pars.pop()
+            # Discard last line if it is short.
+            if (len(pars) > 1 and len(pars[-1]) < 20):
+                pars.pop()
+            # Add remaining paragraphs to result (using Unix newline).
+            ascii += '\n'.join(pars)
+            
+    except Exception as e:
+        log_message(
+            'ERROR: Failed to execute command line {}\n{}'.format(
+                ' '.join(cmd),
+                str(e)
+                )
+            )
+    return ascii

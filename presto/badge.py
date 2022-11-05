@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -95,17 +91,24 @@ for i in range(HIGH_PRIME):
     n = (n * LOW_PRIME) % HIGH_PRIME
 
 
-# returns a tuple (disc image file name, (red, green, blue, alpha)) for a given "badge_color"
 def disc_and_color(bc):
-    # badge color is encoded in lower 4 bytes: disc number (highest), red , green, blue (lowest)
+    """
+    Returns tuple (disc image file name, (red, green, blue, alpha)) for code bc.
+    
+    The badge color is encoded in the lower 4 bytes of bc:
+    disc number (highest), red , green, blue (lowest).
+    """
     bc, blue = divmod(bc & 0xffffffff, 256)
     bc, green = divmod(bc, 256)
     disc, red = divmod(bc, 256)
-    # odd disc numbers indicate dark metal shades
+    # Odd disc numbers indicate dark metal shades.
     disc, dark = divmod(disc, 2)
-    # protect against disc numbers beyond range
+    # Use modulo to guard against disc numbers beyond range.
     disc = disc % len(BADGE_METALS)
-    return ('disc-%s%s.png' % (BADGE_METALS[disc], '-dark' if dark else ''), (red, green, blue, 255))
+    return (
+        'disc-{}{}.png'.format(BADGE_METALS[disc], '-dark' if dark else ''),
+        (red, green, blue, 255)
+        )
 
 
 # returns star polygon coordinates for M-th star of in total N stars (zero-based!)
@@ -236,7 +239,9 @@ def render_certified_badge(badge):
         # throw an exception if data to be stored exceeds 16 thousand bits
         bit_count = len(data_bits)
         if bit_count > MAX_DATA_BITS:
-            raise ValueError('Badge data exceeds %d bytes' % MAX_DATA_BITS // 8)
+            raise ValueError(
+                'Badge data exceeds {} bytes'.format(MAX_DATA_BITS // 8)
+                )
         # compute a hash (for validation purposes) and render it as string of '0' and '1'
         bits_hash = hash_to_binary(hexlify(pbkdf2_hmac("sha256", data_bits,
                 settings.BADGE_SALT, settings.BADGE_ITERATIONS)))
@@ -262,7 +267,7 @@ def render_certified_badge(badge):
         response = HttpResponse(content_type='image/png')
         img.save(response, 'PNG')
         return response
-    except Exception, e:
+    except Exception as e:
         log_message('Failed to render badge: ' + str(e))
         return None
 
@@ -283,7 +288,7 @@ def verify_certified_image(img):
         bits = ''.join([test_bit(pix, i) for i in range(256, 270)])
         bit_count = int(bits, 2)
         if bit_count > MAX_DATA_BITS:
-            raise ValueError('Invalid data size (%d)' % bit_count)
+            raise ValueError('Invalid data size ({})'.format(bit_count))
         # get the actual data
         bits = ''.join([test_bit(pix, i) for i in range(270, 270 + bit_count)])
         # check integrity of bits
@@ -296,7 +301,7 @@ def verify_certified_image(img):
         # see if the standard badge properties exist
         mf = list(set(['ID', 'CC', 'CN', 'AL', 'TI', 'PR', 'FN', 'EM']) - set(bd.keys()))
         if mf:
-            raise ValueError('Incomplete data (missing: %s)' % ', '.join(mf))
+            raise ValueError('Incomplete data (missing: {})'.format(', '.join(mf)))
         # see if the badge exists in the database
         # NOTE: use filter instead of get so that we can generate our own error message
         b = PrestoBadge.objects.filter(pk=bd['ID'])
@@ -312,27 +317,54 @@ def verify_certified_image(img):
             pr = b.referee.estafette_leg.template.name
         # see if badge data match those in database
         if prefixed_user_name(u) != bd['FN']:
-            raise ValueError('Holder name (%s) does not match "%s"' %
-                (bd['FN'], prefixed_user_name(u)))
+            raise ValueError(
+                'Holder name ({}) does not match "{}"'.format(
+                    bd['FN'],
+                    prefixed_user_name(u)
+                    )
+                )
         if u.email != bd['EM']:
-            raise ValueError('Holder e-mail address (%s) does not match "%s"' %
-                (bd['EM'], u.email))
+            raise ValueError(
+                'Holder e-mail address ({}) does not match "{}"'.format(
+                    bd['EM'],
+                    u.email
+                    )
+                )
         if b.course.code != bd['CC']:
-            raise ValueError('Course code (%s) does not match "%s"' % (bd['CC'], b.course.code))
+            raise ValueError(
+                'Course code ({}) does not match "{}"'.format(
+                    bd['CC'],
+                    b.course.code
+                    )
+                )
         if b.course.name != bd['CN']:
-            raise ValueError('Course name (%s) does not match "%s"' % (bd['CN'], b.course.name))
+            raise ValueError(
+                'Course name ({}) does not match "{}"'.format(
+                    bd['CN'],
+                    b.course.name
+                    )
+                )
         if pr != bd['PR']:
-            raise ValueError('Project relay name (%s) does not match "%s"' %
-                (bd['PR'], pr))
+            raise ValueError(
+                'Project relay name ({}) does not match "{}"'.format(
+                    bd['PR'],
+                    pr
+                    )
+                )
         if b.attained_level != bd['AL']:
-            raise ValueError('Attained level (%d) should have been %d' % (bd['AL'], b.attained_level))
+            raise ValueError(
+                'Attained level ({}) should have been {}'.format(
+                    bd['AL'],
+                    b.attained_level
+                    )
+                )
         # update badge verification parameters
         b.time_last_verified = timezone.now()
         b.verification_count += 1
         b.save()
         # return the badge object
         return b
-    except Exception, e:
+    except Exception as e:
         log_message('Failed to validate badge: ' + str(e))
         return False
 
@@ -367,8 +399,8 @@ def badge(request, **kwargs):
         # if otherwise render the certified badge image
         return render_certified_badge(b)
     
-    except Exception, e:
-        log_message('ERROR while rendering badge: %s' % str(e), context['user'])
+    except Exception as e:
+        log_message('ERROR while rendering badge: ' + str(e), context['user'])
         with open(os.path.join(settings.IMAGE_DIR, 'not-found.png'), "rb") as f:
             return HttpResponse(f.read(), content_type="image/png")
 

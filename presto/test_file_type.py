@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -47,6 +43,8 @@ from tempfile import mkstemp
 
 # presto modules
 from presto.generic import generic_context, warn_user, inform_user
+from presto.scan import contains_comments
+from presto.utils import pdf_to_text
 
 MAX_UPLOAD_SIZE = 2.0  # max 2 MB per upload file
 
@@ -63,10 +61,18 @@ def test_file_type(request, **kwargs):
     f = request.FILES['test']
     upload_size = f.size / 1048576.0 # size in MB 
     ext = os.path.splitext(f.name)[1]
-    inform_user(context, 'File uploaded', 'Size: %3.2f MB<br/>Extension: %s' % (upload_size, ext))
+    inform_user(
+        context,
+        'File uploaded',
+        'Size: {:3.2f} MB<br>Extension: {}'.format(upload_size, ext)
+        )
     file_too_big = upload_size > MAX_UPLOAD_SIZE
     if file_too_big:
-      warn_user(context, 'File too big', 'Size exceeds %3.2f MB' % MAX_UPLOAD_SIZE)
+      warn_user(
+        context,
+        'File too big',
+        'Size ({:3.2f}) exceeds {:3.2f} MB'.format(upload_size, MAX_UPLOAD_SIZE)
+        )
     else:
         try:
             # save upload as temporary file
@@ -88,8 +94,26 @@ def test_file_type(request, **kwargs):
                 wbk = load_workbook(fn)
             elif ext == '.pdf':
                 pdf = PdfFileReader(fn)
+                ascii =  pdf_to_text(fn)
+                inform_user(
+                    context,
+                    'File is PDF - Text contents:',
+                    ascii
+                    )
+            # also warn if file contains comments
+            if contains_comments(fn):
+                warn_user(
+                    context,
+                    'File contains comments',
+                    'These should be completely removed or the upload will be refused.'
+                    )
+
         # NOTE: assumes that incorrect file types will raise an error
-        except Exception, e:
-            warn_user(context, 'Invalid_file', 'ERROR while checking file %s: %s' % (fn, str(e)))
+        except Exception as e:
+            warn_user(
+                context,
+                'Invalid_file',
+                'ERROR while checking file {}: {}'.format(fn, str(e))
+                )
 
     return render(request, 'presto/test_file_type.html', context)

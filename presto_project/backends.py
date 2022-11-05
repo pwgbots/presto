@@ -41,7 +41,8 @@ class MySaml2Backend(Saml2Backend):
                      create_unknown_user, **kwargs) 
 
         is_employee = False
-        eduPersonAffiliation = session_info['ava']['urn:mace:dir:attribute-def:eduPersonAffiliation']
+        print(session_info)
+        eduPersonAffiliation = session_info['ava']['eduPersonAffiliation']
         
         if eduPersonAffiliation is not None:
             is_employee = eduPersonAffiliation[0] == 'employee'        

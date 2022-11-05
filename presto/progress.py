@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -34,7 +30,6 @@ from django.core.files.base import ContentFile
 from django.db.models import Count
 from django.http import HttpResponse
 from django.utils import timezone
-from django.utils.timezone import localtime
 
 from .models import CourseEstafette, Participant, Assignment, PeerReview, DEFAULT_DATE
 
@@ -46,14 +41,17 @@ from PIL import Image, ImageDraw, ImageFont
 
 # presto modules
 from presto.generic import generic_context, has_role, change_role
+from presto.teams import team_assignments, team_final_reviews, team_lookup_dict
 from presto.utils import encode, decode, log_message
 
-IMG_WIDTH = 540   # not too wide since it is a margin gadget only
-IMG_HEIGHT = 320  # with 100% complete = bar of 100px high, this leaves enough space for legend text
-BAR_CNT = 120      # number of time steps = vertical bars in chart
+IMG_WIDTH = 540   # not too wide as it should download rapidly
+IMG_HEIGHT = 320  # with 100% complete = bar of 250px high, this leaves enough space for legend
+BAR_CNT = 120     # number of time steps = vertical bars in chart
 BAR_WIDTH = 4     # width of a single bar; 120 bars = 480px chart area width
 V_AXIS_X = 55     # this leaves 50px for percentages text on the left, and 5px margin on the right
-H_AXIS_Y = 265    # this leaves 55px margin for legend and remaining time text
+H_AXIS_Y = 265    # this leaves 55px margin for legend
+
+DAY_TIME = '%d-%m %H:%M'
 
 # view for progress "page"
 # NOTE: this view does not render a page, but sends a PNG file to the browser
@@ -91,11 +89,8 @@ def progress(request, **kwargs):
             time_step = int((ce.end_time - ce.start_time).total_seconds() / BAR_CNT) + 1
             # get the number of registered participants (basis for 100%)
             p_count = Participant.objects.filter(estafette=ce).count()
-            # get leg number and upload time all uploaded assignments for this participant
-            a_list = Assignment.objects.filter(participant=p
-                ).filter(time_uploaded__gt=DEFAULT_DATE
-                ).filter(clone_of__isnull=True
-                ).values('leg__number', 'time_uploaded')
+            # get leg number and upload time of all uploaded assignments for this participant
+            a_list = team_assignments(p).values('leg__number', 'time_uploaded')
             for a in a_list:
                 # get the number of assignments submitted earlier
                 cnt = Assignment.objects.filter(participant__estafette=ce
@@ -115,10 +110,7 @@ def progress(request, **kwargs):
                 draw.text((x-1.5, y-14.5), 'o', font=fnt, fill=(255, 255, 255, 255))
             # get nr and submission time for this participant's final reviews
             nr_of_steps = ce.estafette.template.nr_of_legs()
-            r_set = PeerReview.objects.filter(reviewer=p
-                ).filter(assignment__leg__number=nr_of_steps
-                ).filter(time_submitted__gt=DEFAULT_DATE
-                ).values('reviewer__id', 'time_submitted'
+            r_set = team_final_reviews(p).values('reviewer__id', 'time_submitted'
                 ).order_by('reviewer__id', 'time_submitted')
             r_index = 0
             for r in r_set:
@@ -146,8 +138,11 @@ def progress(request, **kwargs):
         img.save(response, 'PNG')
         return response
 
-    except Exception, e:
-        log_message('ERROR while generating progress chart: %s' % str(e), context['user'])
+    except Exception as e:
+        log_message(
+            'ERROR while generating progress chart: ' + str(e),
+            context['user']
+            )
         with open(os.path.join(settings.IMAGE_DIR, 'not-found.png'), "rb") as f:
             return HttpResponse(f.read(), content_type="image/png")
 
@@ -166,6 +161,7 @@ def update_progress_chart(ce):
     t_now = timezone.now()
     present_bin = min(int((t_now - t_start).total_seconds() / time_step), BAR_CNT)
     # get the number of registered participants (basis for 100%)
+    # NOTE: do not count "instructor participants" (having dummy index < 0)
     p_count = Participant.objects.filter(estafette=ce).exclude(student__dummy_index__lt=0).count()
     # get registration time for all participants in this course estafette
     prog_set = Participant.objects.filter(estafette=ce).exclude(student__dummy_index__lt=0
@@ -177,24 +173,35 @@ def update_progress_chart(ce):
         # protect against "ghost participants" that started after the end time
         if bin_nr <= BAR_CNT:
             y[leg_index][bin_nr] += 1.0
+    # get the dict with team composition
+    team_dict = team_lookup_dict(ce)
     # get leg number and upload time for all *uploaded* assignments for this course estafette
     prog_set = Assignment.objects.filter(participant__estafette=ce
         ).filter(time_uploaded__gt=DEFAULT_DATE
         ).filter(clone_of__isnull=True
-        ).values('leg__number', 'time_uploaded')
+        ).values('participant__id', 'leg__number', 'time_uploaded')
     # each assignment should add 1 to the bin for its uploading time
     for a in prog_set:
         leg_index = nr_of_steps - a['leg__number']  # leg numbers start at 1, so 0 = last leg
         bin_nr = max(int((a['time_uploaded'] - t_start).total_seconds() / time_step), 0)
         # protect against late uploads (after the end time) -- just in case
         if bin_nr <= BAR_CNT:
-            y[leg_index][bin_nr] += 1.0
+            pcnt = 1.0
+            # see if assignment has been submitted by a team leader
+            t_entry = team_dict.get(a['participant__id'], None)
+            if t_entry:
+                if type(t_entry) is list:
+                    # if so, add number of members still on the team at the time of submission
+                    for tpl in t_entry:
+                        if a['time_uploaded'] < tpl[1]:
+                            pcnt += 1.0
+            y[leg_index][bin_nr] += pcnt
     # get final reviews for this estafette
     prog_set = PeerReview.objects.filter(reviewer__estafette=ce
         ).filter(assignment__leg__number=nr_of_steps
         ).filter(time_submitted__gt=DEFAULT_DATE
         ).exclude(reviewer__student__dummy_index__lt=0
-        ).values('final_review_index', 'time_submitted'
+        ).values('reviewer__id', 'final_review_index', 'time_submitted'
         ).order_by('reviewer__id', 'time_submitted')
     # each review should add 1 to the bin for its submission time
     for r in prog_set:
@@ -202,7 +209,16 @@ def update_progress_chart(ce):
         bin_nr = max(int((r['time_submitted'] - t_start).total_seconds() / time_step), 0)
         # protect against late reviews (e.g., instructor reviews submitted after closure)
         if bin_nr <= BAR_CNT:
-            y[rev_index][bin_nr] += 1.0
+            pcnt = 1.0
+            # see if assignment has been submitted by a team leader
+            t_entry = team_dict.get(r['reviewer__id'], None)
+            if t_entry:
+                if type(t_entry) is list:
+                    # if so, add number of members still on the team at the time of submission
+                    for tpl in t_entry:
+                        if r['time_submitted'] < tpl[1]:
+                            pcnt += 1.0
+            y[rev_index][bin_nr] += pcnt
     # calculate the cumulative counts
     for i in range(nr_of_steps + ce.final_reviews + 1):
         for b in range(1, present_bin + 1):
@@ -211,7 +227,7 @@ def update_progress_chart(ce):
     if p_count > 0:
         for i in range(nr_of_steps + ce.final_reviews + 1):
             for b in range(present_bin + 1):
-                y[i][b] = round(100.0 * y[i][b] / p_count)
+                y[i][b] = 100.0 * y[i][b] / p_count
     # get a font
     fnt = ImageFont.truetype(os.path.join(settings.FONT_DIR, 'segoeui.ttf'), 16)
     # get colors (shades of TU Delft blue and teal)
@@ -242,8 +258,12 @@ def update_progress_chart(ce):
             draw.text((x - fnt.getsize(str(d))[0] / 2.0, H_AXIS_Y + 4), str(d),
                 font=fnt, fill=(0, 0, 0, 255))
             dx = 0
-    draw.text((V_AXIS_X - 15, H_AXIS_Y + 4), ce.course.language.phrase('Day'),
-        font=fnt, fill=(0, 0, 0, 255))
+    draw.text(
+        (V_AXIS_X - 15, H_AXIS_Y + 4),
+        ce.course.language.phrase('Day'),
+        font=fnt,
+        fill=(0, 0, 0, 255)
+        )
     # draw color legend
     lx = V_AXIS_X
     for l in range (nr_of_steps, -1, -1):
@@ -258,22 +278,26 @@ def update_progress_chart(ce):
         draw.text((lx + 7, H_AXIS_Y + 27), str(r),
             font=fnt, fill=(128, 128, 128, 255))
         lx += 30
-    draw.text((lx, H_AXIS_Y + 27), ce.course.language.phrase('Steps_completed') %
-        (ce.course.language.phrase('Reviews') if ce.final_reviews > 0 else ''),
-        font=fnt, fill=(128, 128, 128, 255))
+    r = (ce.course.language.phrase('Reviews') if ce.final_reviews > 0 else '')
+    draw.text(
+        (lx, H_AXIS_Y + 27),
+        ce.course.language.phrase('Steps_completed').format(r),
+        font=fnt,
+        fill=(128, 128, 128, 255)
+        )
     # draw step bars
     for l in range (nr_of_steps, -1, -1):
         x = V_AXIS_X + 1
-        for b in range (0, present_bin):
+        for b in range (0, present_bin + 1):
             if y[l][b] > 0:
                 draw.rectangle(
-                    [x, H_AXIS_Y - 2.5*y[l][b] - 1, x + BAR_WIDTH - 1, H_AXIS_Y - 1],
+                    [x, H_AXIS_Y - round(2.5*y[l][b]) - 1, x + BAR_WIDTH - 1, H_AXIS_Y - 1],
                     fill=blues[l], outline=None)
             x += BAR_WIDTH
     # draw final review bars
     for r in range (1, ce.final_reviews + 1):
         x = V_AXIS_X + 1
-        for b in range (0, present_bin):
+        for b in range (0, present_bin + 1):
             if y[nr_of_steps + r][b] > 0:
                 draw.rectangle(
                     [x, H_AXIS_Y - 2.5*y[nr_of_steps + r][b] - 1,
@@ -283,31 +307,95 @@ def update_progress_chart(ce):
     # draw 20% lines in gray
     ly = H_AXIS_Y - 250
     for i in range(0, 5):
-        draw.line([(V_AXIS_X - 3, ly), (V_AXIS_X + BAR_CNT * BAR_WIDTH, ly)],
-            fill=(200, 200, 200, 255), width=1)
-        txt = '%d%%' % (100 - 20*i)
-        draw.text((V_AXIS_X - fnt.getsize(txt)[0] - 6, ly - 13), txt,
-            font=fnt, fill=(0, 0, 0, 255))
+        draw.line(
+            [(V_AXIS_X - 3, ly), (V_AXIS_X + BAR_CNT * BAR_WIDTH, ly)],
+            fill=(200, 200, 200, 255),
+            width=1
+            )
+        txt = '{}%'.format(100 - 20*i)
+        draw.text(
+            (V_AXIS_X - fnt.getsize(txt)[0] - 6, ly - 13),
+            txt,
+            font=fnt,
+            fill=(0, 0, 0, 255)
+            )
         ly += 50;
     # also draw 0% at bottom
     txt = '0%'
-    draw.text((V_AXIS_X - fnt.getsize(txt)[0] - 6, ly - 13), txt,
-        font=fnt, fill=(0, 0, 0, 255))
+    draw.text(
+        (V_AXIS_X - fnt.getsize(txt)[0] - 6, ly - 13),
+        txt,
+        font=fnt,
+        fill=(0, 0, 0, 255)
+        )
     # also draw number of participants (N) beneath the 100% mark
-    txt = '(N = %d)' % p_count  # for debugging, also add datetime.now().strftime("%I:%M:%S")
+    txt = '(N = {})'.format(p_count)
     wh = fnt.getsize(txt)
-    draw.rectangle([V_AXIS_X + 4, H_AXIS_Y - 264,
-        V_AXIS_X + 5 + wh[0], H_AXIS_Y - 260 + wh[1]],
-        fill=(255, 255, 255, 255), outline=None)
+    draw.rectangle(
+        [V_AXIS_X + 4, H_AXIS_Y - 264, V_AXIS_X + 5 + wh[0], H_AXIS_Y - 260 + wh[1]],
+        fill=(255, 255, 255, 255),
+        outline=None
+        )
     draw.text((V_AXIS_X + 5, H_AXIS_Y - 263), txt, font=fnt, fill=(0, 0, 0, 255))
+    
+    # get a small font for displaying the deadlines
+    sfnt = ImageFont.truetype(os.path.join(settings.FONT_DIR, 'segoeui.ttf'), 12)
+
+    if ce.bonus_per_step:
+        # draw speed bonus deadlines in transparent magenta
+        bd = ce.bonus_deadlines()
+        for i in range(1, nr_of_steps + 1):
+            # NOTE: use GET as dict may be empty or incomplete
+            bdt = bd.get(i, None)
+            if bdt:
+                present_bin = min(
+                    int((bdt - t_start).total_seconds() / time_step),
+                    BAR_CNT
+                    )
+                x = V_AXIS_X + (present_bin + 1)* BAR_WIDTH
+                draw.line(
+                    [(x, H_AXIS_Y - 250), (x, H_AXIS_Y)],
+                    fill=(161, 0, 88, 64),
+                    width=1
+                    )
+                # convert datetime to two strings: date and time
+                txt = bdt.strftime(DAY_TIME).split(' ')
+                wh = sfnt.getsize(txt[0])
+                draw.text(
+                    (x - wh[0]/2, H_AXIS_Y - 265),
+                    txt[0],
+                    font=sfnt,
+                    fill=(161, 0, 88, 128)
+                    )
+                wh = sfnt.getsize(txt[1])
+                draw.text(
+                    (x - wh[0]/2, H_AXIS_Y - 250),
+                    txt[1],
+                    font=sfnt,
+                    fill=(161, 0, 88, 128)
+                    )
+            
     # draw assignment deadline in TU Delft magenta
     present_bin = min(int((ce.deadline - t_start).total_seconds() / time_step), BAR_CNT)
-    x = V_AXIS_X + present_bin * BAR_WIDTH
+    x = V_AXIS_X + (present_bin + 1) * BAR_WIDTH
     draw.line([(x, H_AXIS_Y - 250), (x, H_AXIS_Y)], fill=(161, 0, 88, 255), width=1)
+    # convert datetime to two strings: date and time
+    tzi = timezone.get_current_timezone()
+    txt = ce.deadline.astimezone(tzi).strftime(DAY_TIME).split(' ')
+    wh = sfnt.getsize(txt[0])
+    draw.text((x - wh[0]/2, H_AXIS_Y - 265), txt[0], font=sfnt, fill=(161, 0, 88, 255))
+    wh = sfnt.getsize(txt[1])
+    draw.text((x - wh[0]/2, H_AXIS_Y - 250), txt[1], font=sfnt, fill=(161, 0, 88, 255))
     # draw reviews deadline in TU Delft orange
     present_bin = min(int((ce.review_deadline - t_start).total_seconds() / time_step), BAR_CNT)
-    x = V_AXIS_X + present_bin * BAR_WIDTH
+    x = V_AXIS_X + (present_bin + 1) * BAR_WIDTH
     draw.line([(x, H_AXIS_Y - 250), (x, H_AXIS_Y)], fill=(236, 127, 44, 255), width=1)
+    # convert datetime to two strings: date and time
+    txt = ce.review_deadline.astimezone(tzi).strftime(DAY_TIME).split(' ')
+    wh = sfnt.getsize(txt[0])
+    draw.text((x - wh[0]/2, H_AXIS_Y - 265), txt[0], font=sfnt, fill=(236, 127, 44, 255))
+    wh = sfnt.getsize(txt[1])
+    draw.text((x - wh[0]/2, H_AXIS_Y - 250), txt[1], font=sfnt, fill=(236, 127, 44, 255))
     # return the image
     return img
 
@@ -319,19 +407,22 @@ def blue_range(n):
     tud_blue = [0, 166, 240]  # to be middle of the color range
     dark_blue = [15, 17, 80]
     light_blue = [198, 238, 250]
-    # for odd number of colors, TUD blue is central color
     if n % 2:
+        # for an odd number of colors, TUD blue is central color
         tud = [tud_blue]
         m = 2.0 / (n - 1) 
     else:
-    # for even number, TUD blue is "aimed for", but not reached
+        # for an even number, TUD blue is "aimed for", but not reached
         tud = []
         m = 2.0 / n
-    light = [[198 - i*m*198, 238 - i*m*72, 250 - i*m*10] for i in range(n/2 - 1, -1, -1)]
+    light = [
+        [198 - i*m*198, 238 - i*m*72, 250 - i*m*10]
+            for i in range(n/2 - 1, -1, -1)
+        ]
     dark = [[15 - i*m*15, 17 + i*m*149, 80 + i*m*160] for i in range(n/2)]
     # registration color is a light shade of grey
-    reg = [[235, 235, 235]]
-    return ['#' + ''.join(['%02x' % int(r) for r in c]) for c in dark + tud + light  + reg]
+    blues = dark + tud + light + [[235, 235, 235]]
+    return ['#' + ''.join(['{:02x}'.format(int(r)) for r in c]) for c in blues]
 
 
 # returns a list of n shades of TU Delft teal from dark to light
@@ -342,6 +433,5 @@ def teal_range(n):
     tud_teal = [102, 188, 170]
     m = 1 / (n - 1)
     teals = [[40 + i*m*62, 90 + i*m*98, 80 + i*m*90] for i in range(n)]
-    return ['#' + ''.join(['%02x' % int(r) for r in c]) for c in teals]
-
+    return ['#' + ''.join(['{:02x}'.format(int(r)) for r in c]) for c in teals]
 

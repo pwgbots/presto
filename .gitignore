@@ -13,6 +13,8 @@ db.sqlite3
 # ignore uploads
 upload/*
 
-presto-project/settings_local.py
-
+# ignore collected static files
 /static
+
+# ignore SAML certificate data
+saml/cert/*

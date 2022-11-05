@@ -1,12 +1,11 @@
-{% extends "developer.html" %}
-
+{% extends "./developer.html" %}
 {% comment %}
 
 Software developed by Pieter W.G. Bots for the PrESTO project
 Code repository: https://github.com/pwgbots/presto
 Project wiki: http://presto.tudelft.nl/wiki
 
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -30,8 +29,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 {% load static %}
 
 {% block headlines %}
-  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+  <link href="{% static 'presto/quill.snow.css' %}" rel="stylesheet">
+  <script src="{% static 'presto/quill.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/tab.css' %}">
   <script type="text/javascript" src="{% static 'presto/dist/components/tab.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
@@ -109,6 +108,10 @@ QUILLS = [
 {% else %}
   $('#withdraw-template-button').hide();
 {% endif %}
+
+$('#preview-template-button').click(function() {
+  window.location.replace('./template/preview/{{ template.hex }}');
+});
 
 $('#publish-template-button').click(function() {
   var obj = {a: 'publish template', h: '{{ template.hex }}'};
@@ -413,16 +416,16 @@ function getStepData(nr, json) {
   $('#rev-words').html(json.w);
   $('#rev-words-inp').val(json.w);
   if (json.w === 0) {
-    $('#rev-words').hide();
+    $('#rev-words-lbl').hide();
   } else {
-    $('#rev-words').show();
+    $('#rev-words-lbl').show();
   }
   $('#rev-time').html(json.rt);
   $('#rev-time-inp').val(json.rt);
   if (json.rt === 0) {
-    $('#rev-time').hide();
+    $('#rev-time-lbl').hide();
   } else {
-    $('#rev-time').show();
+    $('#rev-time-lbl').show();
   }
   displayItems(true);
   if (SELECTED_TAB !== 'template') {
@@ -743,6 +746,10 @@ function deleteItem(e, nr, rits=true) {
           <i class="unhide icon"></i>
           Publish
         </div>
+        <div id="preview-template-button" class="ui mini right floated blue button" style="margin-top:-1em">
+          <i class="play circle outline icon"></i>
+          Preview
+        </div>
       </div>
     </div>
     <div id="edit-template" class="ui black segment" style="margin:0em -0.5em !important">
@@ -928,10 +935,10 @@ function deleteItem(e, nr, rits=true) {
             </div>
           </h4>
           <div id="rev-instr" style="margin-bottom: 0.5em"></div>
-          <div class="ui small basic orange horizontal label">
+          <div  id="rev-words-lbl" class="ui small basic orange horizontal label">
             <span id="rev-words"></span>+ words
           </div>
-          <div class="ui small basic black horizontal label">
+          <div id="rev-time-lbl" class="ui small basic black horizontal label">
             <i class="clock icon"></i>
             <span id="rev-time"></span>+ minutes
           </div>
@@ -1095,3 +1102,4 @@ function deleteItem(e, nr, rits=true) {
 </div>
 
 {% endblock page_content %}
+

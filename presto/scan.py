@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,59 +23,89 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from .models import EstafetteLeg
 
+from zipfile import ZipFile
 
-# returns string with key words (double quoted) that are required for assignment a,
-# but appear to be missing in Word document doc
+
+def contains_comments(path):
+    """Return True if the designated document contains comments."""
+    try:
+        # test whether the file is a docx, pptx or xlsx (i.e., a ZIP file)
+        with ZipFile(path, 'r') as zf:
+            # it is a ZIP file; now see if it contains "suspect" files
+            suspects = [
+                'comments/', 'word/comm', 'word/peop', 'ppt/comme', 'xl/commen'
+                ]
+            for i in zf.infolist():
+                if i.filename[:9] in suspects:
+                    return True
+    except Exception as e:
+        pass
+    return False    
+
+
 def missing_key_words(a, doc):
-    # key word list compiles case keywords and keywords for this and all preceding steps 
+    """
+    Return string with key words (double quoted) that are missing.
+    
+    Required key words may have been specified for assignment a, both for its
+    case and for its step, so check whether some such words but appear to be
+    missing in Word document doc.
+    """
+    # key word list kwl compiles case keywords and keywords for this AND all
+    # preceding steps 
     kwl = a.case.required_keywords.split(';')
-    for l in EstafetteLeg.objects.filter(template=a.leg.template).exclude(number__gt=a.leg.number):
+    for l in EstafetteLeg.objects.filter(
+            template=a.leg.template).exclude(number__gt=a.leg.number):
         kwl += l.required_keywords.split(';')
     missing_kw = []
     for kw in kwl:
-        # ignore leading and trailing whitespace, and convert all inner whitespace to a single space
+        # Ignore leading and trailing whitespace, and convert all inner
+        # whitespace to a single space.
         w = ' '.join(kw.strip().split())
-        # if key word contains one or more upper case characters, this is interpreted as mandatory
+        # If key word contains one or more upper case characters, this is
+        # interpreted as mandatory.
         ignore_case = w == w.lower()
         if ignore_case:
             ucw = w.upper()
-        # assume that the word is NOT mentioned
+        # Assume that the word is NOT mentioned.
         m = False
-        for par in doc.paragraphs:
-            # reduce all white space to a single one, including "non-breaking spaces"
-            txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
-            if ignore_case:
-                m = ucw in txt.upper()
-            else:
-                m = w in txt
-            if m:
-                break
-        if not m:
-            for tbl in doc.tables:
-                for row in tbl.rows:
-                    for cell in row.cells:
-                        for par in cell.paragraphs:
-                            # reduce all white space to a single one, including "non-breaking spaces"
-                            txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
-                            if ignore_case:
-                                m = ucw in txt.upper()
-                            else:
-                                m = w in txt
+        if type(doc).__name__ == 'Document':
+            for par in doc.paragraphs:
+                # reduce all white space to a single one, including "non-breaking spaces"
+                txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
+                if ignore_case:
+                    m = ucw in txt.upper()
+                else:
+                    m = w in txt
+                if m:
+                    break
+            if not m:
+                for tbl in doc.tables:
+                    for row in tbl.rows:
+                        for cell in row.cells:
+                            for par in cell.paragraphs:
+                                # reduce all white space to a single one, including "non-breaking spaces"
+                                txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
+                                if ignore_case:
+                                    m = ucw in txt.upper()
+                                else:
+                                    m = w in txt
+                                if m:
+                                    break
                             if m:
                                 break
                         if m:
                             break
                     if m:
                         break
-                if m:
-                    break
-        # if not mentioned in any paragraph, add it to the missing word list
+        # Otherwise, doc is a string.
+        elif ignore_case:
+            m = ucw in ' '.join(doc.strip().split()).upper()
+        else:
+            m = w in ' '.join(doc.strip().split())
+        # If word is not mentioned, add it to the missing word list.
         if not m:
             missing_kw.append(w)
     # return missing key words as string, or None if empty list
@@ -83,25 +113,35 @@ def missing_key_words(a, doc):
         return '"' + '", "'.join([w for w in missing_kw]) + '"'
     return None
 
-# returns word count of text following section name s, or False if the section
-# appears to be missing in Word document doc
-# NOTE: Stripping ALL whitespace is needed because students typically insert spaces into
-#       longer words, and this can be tolerated without major consequences
+
 def has_section(doc, s):
-    # count number of words in section title (after replacing non-breaking spaces by normal ones)
+    """
+    Return False if section s is missing in doc, or too short.
+
+    NOTES:
+    (1) Assumes that section s is the LAST section of the document, and hence
+        counts ALL words in the doc that follow section title s.
+    (2) Stripping ALL whitespace is needed because students typically insert
+        spaces into longer words, and this can be tolerated without major
+        consequences.
+    (3) Short section titles can also occur somewhere in the midst of the
+        document text. To prevent false positives, we ignore paragraphs
+        longer than the section length plus 4 words, so that prefixes like
+        "Section number 1." are accepted, but title phrase embedded in longer
+        paragraphs ignored.
+    """
+    # replace non-breaking spaces by normal ones
     s = s.replace(unichr(160), ' ').split()
-    # to prevent false positives, we ignore paragraphs longer than the section length plus 5 words
-    # so that prexifxes like "Section number 1." are accepted, but title phrase embedded in longer
-    # paragraphs ignored.
-    max_cnt = len(s) + 5
+    # set the max. word count to consider it still as a section title
+    max_cnt = len(s) + 4
     # strip ALL whitespace from section title and convert it to upper case
     s = ''.join(s).upper()
     word_cnt = 0
+    # use searching to indicate whether the title has been found 
     searching = True
     for par in doc.paragraphs:
         w_list = par.text.replace(unichr(160), ' ').split()
         w_cnt = len(w_list)
-        # print ''.join(w_list).upper().encode('utf-8')
         if w_cnt <= max_cnt and searching:
             searching = not (s in ''.join(w_list).upper())
         # test again, because word count should include title words
@@ -112,29 +152,50 @@ def has_section(doc, s):
         return None
     return word_cnt
 
-# returns string with sections (double quoted) that are required for assignment a,
-# but appear to be missing (or too short) in Word document doc
+
 def missing_sections(a, doc):
+    """
+    Return a string with sections that are required for a but missing in doc.
+
+    Assignment a can specify required section titles as well as their minimum
+    word count, so check whether such sections appear to be missing or too short
+    in the Word document doc.
+    """
     # initialize word count of next section (hence initially 0) and missing string  
     next_swc = 0
     missing = []
     lang = a.participant.student.course.language
     # get list of section titles in reverse order of steps
-    for l in EstafetteLeg.objects.filter(template=a.leg.template
+    for l in EstafetteLeg.objects.filter(
+        template=a.leg.template
         ).exclude(number__gt=a.leg.number).order_by('-number'):
+        
         title = l.required_section_title
         min_length = l.required_section_length
         if title:
             swc = has_section(doc, title)
             if swc is None:
-                missing.insert(0, lang.phrase('Section_missing') % (l.number, title))
+                missing.insert(
+                    0,
+                    lang.phrase('Section_missing').format(
+                        nr=l.number,
+                        ttl=title
+                        )
+                    )
             else:
                 if swc - next_swc < min_length:
-                    missing.insert(0, lang.phrase('Section_too_short') %
-                        (l.number, title, swc - next_swc, min_length))
+                    missing.insert(
+                        0,
+                        lang.phrase('Section_too_short').format(
+                            nr=l.number,
+                            ttl=title,
+                            cnt=swc - next_swc,
+                            min=min_length
+                            )
+                        )
                 next_swc = swc
-                # print "SWC = %d" % next_swc
+
     # return missing section titles as string, or None if empty list
     if missing:
-        return '<br/>'.join([ttl for ttl in missing])
+        return '<br>'.join([ttl for ttl in missing])
     return None

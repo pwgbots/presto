@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
@@ -37,8 +33,8 @@ from wsgiref.util import FileWrapper
 from .models import LetterOfAcknowledgement
 
 # python modules
-from fpdf import FPDF
-from HTMLParser import HTMLParser
+from fpdf import FPDF, set_global
+from html.parser import HTMLParser
 import os
 import sys
 from tempfile import mkstemp
@@ -59,6 +55,10 @@ DEJAVU_BOLD_FONT = os.path.join(settings.FONT_DIR, 'DejaVuSansCondensed-Bold.ttf
 DEJAVU_BOLD_OBLIQUE_FONT = os.path.join(settings.FONT_DIR, 'DejaVuSansCondensed-BoldOblique.ttf')
 
 POINT_TO_MM = 0.3528
+
+# NOTE: This setting is needed to prevent error during AddFont.
+set_global('FPDF_CACHE_MODE', 1)
+
 
 class HTMLtoPDFParser(HTMLParser):
     pdf = None
@@ -179,7 +179,7 @@ class HTMLtoPDFParser(HTMLParser):
                 self.indent -= 6
 
     def new_line(self, justify = False):
-        print "new line (%d words)" % len(self.word_list)
+        # print "new line ({} words)".format(len(self.word_list))
         top_offset = 0
         bottom_offset = 0
         height = self.font_size * POINT_TO_MM * 0.6
@@ -199,14 +199,14 @@ class HTMLtoPDFParser(HTMLParser):
                     self.pdf.cell(2, height, self.bullets[i])
                 else:
                     self.pdf.set_xy(self.margin + self.pos_x - 6, baseline - height)
-                    self.pdf.cell(4, height, '%d.' % self.item_number[i])
+                    self.pdf.cell(4, height, '{}.'.format(self.item_number[i]))
                 self.item = False
             if justify and len(self.word_list) > 1:
                 xs = (self.text_width - self.line_width - self.indent) * (1.0 / len(self.word_list))
             else:
                 xs = 0
             for w in self.word_list:
-                print w
+                print(w)
                 f = w['font']
                 h = f['size'] * POINT_TO_MM * 0.6
                 self.pdf.set_xy(self.margin + self.pos_x, baseline - h + w['offset'])
@@ -226,10 +226,15 @@ class HTMLtoPDFParser(HTMLParser):
         f = self.font()
         self.pdf.set_font(f['family'], f['style'], f['size'])
         ww = self.pdf.get_string_width(w)
-        print 'w="%s", width=%3.1f, pos_x=%3.1f' % (w, ww, self.line_width)
+        # print 'w="{}", width={:%3.1f}, pos_x={:3.1f}'.format(w, ww, self.line_width)
         if self.indent + self.line_width + ww >= self.text_width:
             self.new_line(self.justify)
-        self.word_list.append({'text': w, 'font': f, 'width': ww, 'offset': self.v_offset})
+        self.word_list.append({
+            'text': w,
+            'font': f,
+            'width': ww,
+            'offset': self.v_offset
+            })
         # also add width of a space
         self.line_width += ww + self.pdf.get_string_width(' ')
 
@@ -252,13 +257,20 @@ class MyFPDF(FPDF):
         self.cell(30, 5, 'Subject:')
         self.set_font('DejaVu', 'I', 8)
         self.set_xy(46, 14)
-        self.cell(80, 5, '(follow this link, or verify the code on %s)' % VERIFICATION_URL,
-            ln=1, align='L')
+        self.cell(
+            80,
+            5,
+            '(follow this link, or verify the code on {url})'.format(
+                url=VERIFICATION_URL
+                ),
+            ln=1,
+            align='L'
+            )
         # larger font for actual entries
         self.set_font('DejaVu', style='U', size=10)
         self.set_xy(46, 10)
         self.set_text_color(0, 173, 238)
-        self.cell(80, 5, code, link='%s/%s' % (VERIFICATION_URL, code))
+        self.cell(80, 5, code, link=(VERIFICATION_URL + '/' + code))
         self.set_font('DejaVu', size=10)
         self.set_text_color(0, 0, 0)
         self.set_xy(46, 20)
@@ -273,7 +285,7 @@ class MyFPDF(FPDF):
     def footer(self):
         self.set_y(-15)
         self.set_font('DejaVu', size=8)
-        self.cell(0, 10, 'Page %d (of 2)' % self.page_no(), align='C')
+        self.cell(0, 10, 'Page {n} (of 2)'.format(n=self.page_no()), align='C')
 
     # adds letter text with referee-related fields from database
     def main_text(self, text):
@@ -285,20 +297,22 @@ class MyFPDF(FPDF):
     def footnote(self, mail):
         self.set_font('DejaVu', size=9)
         self.set_xy(25, -35)
-        self.cell(0, 5, '* E-mail address:  %s' % mail)
+        self.cell(0, 5, '* E-mail address:  ' + mail)
         self.set_xy(27, -31)
-        self.cell(0, 5, 'The ID of the participant is verified by      . The assessment is not proctored in a formal exam setting.')
+        self.cell(0, 5, 'The ID of the participant is verified by      . '
+                + 'The assessment is not proctored in a formal exam setting.'
+            )
         # position the edX logo on the blanks following "verified by"
         self.image(EDX_LOGO, x=82.9, y=267.15, w=5)
         self.cell(w=5)
 
     def page_2(self, rd):
         self.add_page()
-        print rd
+        print(rd)
         # prepare the HTML to be rendered on this page
         html = ('<h3>Description of course <em>%s</em> (%s)</h3><p>(started %s; ended %s)</p>%s' %
             (rd['CN'], rd['CC'], rd['CSD'], rd['CED'], rd['CD']))
-        print html
+        print(html)
         # instantiate the parser and feed it the HTML
         parser = HTMLtoPDFParser()
         parser.set_pdf(self)
@@ -311,30 +325,38 @@ class MyFPDF(FPDF):
         self.set_creator('presto.tudelft.nl')
         self.set_keywords('Authentication code: ' + code)
         self.set_title('Acknowledgement of ' + task)
-        self.set_subject('Letter issued to %s. Copy #%d rendered on %s.' % (name, nr, timestamp))
+        self.set_subject(
+            'Letter issued to {n}. Copy #{c} rendered on {t}.'.format(
+                n=name,
+                c=nr,
+                t=timestamp
+                )
+            )
 
 
 @login_required(login_url=settings.LOGIN_URL)
 def ack_letter(request, **kwargs):
-    # NOTE: downloading a file opens a NEW browser tab/window, meaning that
-    # the coding keys should NOT be rotated; this is achieved by passing "NOT" as test code.
+    # NOTE: Downloading a file opens a NEW browser tab/window, meaning that
+    #       the coding keys should NOT be rotated; this is achieved by passing
+    #       "NOT" as test code.
     context = generic_context(request, 'NOT')
-    # check whether user can have student role
+    # Check whether user can have student role.
     if not has_role(context, 'Student'):
         return render(request, 'presto/forbidden.html', context)
     try:
         h = kwargs.get('hex', '')
-        # verify that letter exists
-        # NOTE: since keys have not been rotated, use the ENcoder here!
+        # Verify that letter exists.
+        # NOTE: Since keys have not been rotated, use the ENcoder here!
         lid = decode(h, context['user_session'].encoder)
         # get letter properties
         loa = LetterOfAcknowledgement.objects.get(id=lid)
-        # update fields, but do not save yet because errors may still prevent effective rendering
+        # Update fields, but do not save yet because errors may still prevent
+        # effective rendering.
         loa.time_last_rendered = timezone.now()
         loa.rendering_count += 1
-        # get the dict with relevant LoA properties in user-readable form
+        # Get the dict with relevant LoA properties in user-readable form.
         rd = loa.as_dict()
-        # create letter as PDF
+        # Create letter as PDF.
         pdf = MyFPDF()
         pdf.add_font('DejaVu', '', DEJAVU_FONT, uni=True)
         pdf.add_font('DejaVu', 'I', DEJAVU_OBLIQUE_FONT, uni=True)
@@ -380,7 +402,7 @@ def ack_letter(request, **kwargs):
             if rd['DFC'] == rd['DLC']:
                 period = 'On ' + rd['DLC']
             else:
-                period = 'In the period between %s and %s' % (rd['DFC'], rd['DLC'])
+                period = 'In the period between {} and {}'.format(rd['DFC'], rd['DLC'])
             # add the referee acknowledgement text to the letter
             text = ''.join(['To whom it may concern,\n\n',
                 'With this letter, DelftX, an on-line learning initiative of Delft University of Technology',
@@ -414,7 +436,7 @@ def ack_letter(request, **kwargs):
         # output to temporary file
         temp_file = mkstemp()[1]
         pdf.output(temp_file, 'F')
-        log_message('Rendering acknowledgement letter for %s' % rd['PR'], context['user'])
+        log_message('Rendering acknowledgement letter for ' + rd['PR'], context['user'])
         # push the PDF as attachment to the browser
         w = FileWrapper(file(temp_file, 'rb'))
         response = HttpResponse(w, content_type='application/pdf')
@@ -422,6 +444,6 @@ def ack_letter(request, **kwargs):
         # now we can assume that the PDF will appear, so the updated letter data can be saved
         loa.save()
         return response
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)

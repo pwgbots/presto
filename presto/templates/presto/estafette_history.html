@@ -1,12 +1,11 @@
-{% extends "base-with-menus.html" %}
-
+{% extends "./base-with-menus.html" %}
 {% comment %}
 
 Software developed by Pieter W.G. Bots for the PrESTO project
 Code repository: https://github.com/pwgbots/presto
 Project wiki: http://presto.tudelft.nl/wiki
 
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -38,6 +37,17 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
   <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
 {% endblock headlines %}
+
+{% block styles %}
+blockquote {
+  border-left: 4px solid #00a6d6;
+  margin-bottom: 5px;
+  margin-top: 5px;
+  padding-left: 16px;
+  font-size: 90%;
+  background-color: #dff0ff;
+}
+{% endblock styles %}
 
 {% block component_inits %}
   $('.ui.rating').rating('disable');
@@ -77,6 +87,18 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 function toggleInfo(nr) {
   $('#info-' + nr).toggle();
+}
+
+function showReviewInstructions(nr) {
+  $('#rev-instr-' + nr).show();
+  $('#show-instr-btn-' + nr).hide();
+  $('#hide-instr-btn-' + nr).show();
+}
+
+function hideReviewInstructions(nr) {
+  $('#rev-instr-' + nr).hide();
+  $('#hide-instr-btn-' + nr).hide();
+  $('#show-instr-btn-' + nr).show();
 }
 
 function showLargeImage() {
@@ -223,10 +245,16 @@ function itemAppraisalAsHtml(rating, ap_str) {
       </div>
     {% endif %}
 
+        {% if team %}
+        <div class="ui large black basic ribbon label">
+          <i class="users icon"></i>
+          <em>Team:</em> {{ team|safe }}
+        </div>
+        {% endif %}
       </div> {# end of eleven wide column DIV #}
       <div class="one wide column">
         <div id="info-btn-{{ nr }}" class="ui tiny right floated blue circular icon button"
-             onclick="toggleInfo('{{ p.nr }}')">
+             onclick="toggleInfo('{{ nr }}')">
           <i class="info icon"></i>
         </div>
       </div>
@@ -237,7 +265,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
       </div>
     </div>
   </div>
-  <div id="info-{{ p.nr }}" class="ui secondary segment" style="font-size: small; display: none">
+  <div id="info-{{ nr }}" class="ui secondary segment" style="font-size: small; display: none">
     {{ desc|safe }}
   </div>
   {% endblock estafette_properties %}
@@ -263,10 +291,24 @@ function itemAppraisalAsHtml(rating, ap_str) {
               <i class="law icon"></i>
               <div class="content">
                 {{ ap.appeal_title|safe }}
+                {% if ap.pred_objected %}
+                  <i class="pointing up outline icon"></i>
+                {% else %}
+                  <i class="{{ ap.pred_appr_icon }} icon"></i>
+                {% endif %}
+                {% if ap.succ_objected %}
+                  <i class="pointing up outline icon"></i>
+                {% else %}
+                  <i class="{{ ap.succ_appr_icon }} icon"></i>
+                {% endif %}
+                <a class="ui mini circular icon button"
+                   onclick="$('#ap-case-{{ ap.nr }}').toggle();$('#ap-dec-{{ ap.nr }}').toggle();{% if ap.ob %} $('#ap-ob-{{ ap.nr }}').toggle();{% endif %}">
+                  <i class="chevron down icon"></i>
+                </a>
               </div>
             </h4>
           </div>
-          <div class="ui segment">
+          <div id="ap-case-{{ ap.nr }}" class="ui segment" style="display: none">
             <div class="ui segments">
               <div class="ui secondary clearing segment">
                 {{ ap.case_title }}
@@ -290,7 +332,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
               </div>
             </div>
             <div class="ui small header">
-              {{ ap.step_title }}
+              {{ ap.step_title|safe }}
             </div>
             {{ ap.step_desc|safe }}
             <div class="ui small compact stackable menu">
@@ -311,7 +353,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
             </div>
             <div class="ui orange secondary segment">
               <div class="ui small header">
-                <i class="empty star icon"></i>
+                <i class="star outline icon"></i>
                 <div class="content"{% if ap.show_names %} data-tooltip="{{ ap.reviewer }}"{% endif %}>
                   {{ lang|phrase:'Successor_review' }}
                 </div>
@@ -334,9 +376,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
               {% endif %}
               {{ ap.review.grade_motivation|safe }}
               <label><strong>{{ lang|phrase:'Review_rating' }}:</strong></label>
-              <div id="appeal-rev-rat-{{ ap.nr }}" class="ui star rating"
-                   data-rating="{{ ap.review.grade }}" data-max-rating="5">
-              </div>
+              <div class="ui yellow star rating" data-rating="{{ ap.review.grade }}" data-max-rating="5"></div>
               {% if ap.review.is_rejection %}
                 <div class="ui raised segment">
                   <div class="ui small header">
@@ -350,7 +390,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
             </div>
             <div class="ui violet secondary segment">
               <div class="ui small header">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 <div class="content"{% if ap.show_names %} data-tooltip="{{ ap.author }}"{% endif %}>
                   {{ lang|phrase:'Predecessor_appealed_on' }} {{ ap.time_appealed }}
                 </div>
@@ -368,7 +408,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
               {% endif %}
             </div>
           </div>
-          <div class="ui grey segment">
+          <div id="ap-dec-{{ ap.nr }}" class="ui grey segment" hidden="hidden">
             <div class="ui small header">
               {{ lang|phrase:'Your_consideration' }}
             </div>
@@ -376,9 +416,12 @@ function itemAppraisalAsHtml(rating, ap_str) {
               {{ ap.appeal.grade_motivation|safe }}
             </div>
             <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+              {% if ap.prior_grade %}
+                <label><strong>{{ lang|phrase:'Your_rating_of_pred_prior_work' }}:</strong></label>
+                <div class="ui orange star rating disabled" data-rating="{{ ap.prior_grade }}" data-max-rating="5"></div>
+              {% endif %}
               <label><strong>{{ lang|phrase:'Your_rating_of_pred_work' }}:</strong></label>
-              <div id="dec-rat-{{ ap.nr }}" class="ui star rating disabled"
-                   data-rating="{{ ap.appeal.grade }}" data-max-rating="5"></div>
+              <div class="ui yellow star rating disabled" data-rating="{{ ap.grade }}" data-max-rating="5"></div>
             </div>
             <div style="margin-bottom: 0.5em">
               {{ ap.penalties_as_text|safe }}
@@ -387,6 +430,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
               <div class="ui {{ ap.pred_appr_color }} secondary segment">
                 <strong>{{ lang|phrase:'Pred_dec_appraisal' }}</strong>:
                 <i class="{{ ap.pred_appr_icon }} icon"></i>
+                {% if ap.pred_objected %}<i class="pointing up outline icon"></i>{% endif %}
                 &nbsp;&nbsp;<small><em>({{ ap.time_pred_appr }})</em></small>
                 {{ ap.pred_motiv|safe }}
               </div>
@@ -395,18 +439,43 @@ function itemAppraisalAsHtml(rating, ap_str) {
               <div class="ui {{ ap.succ_appr_color }} secondary segment">
                 <strong>{{ lang|phrase:'Succ_dec_appraisal' }}</strong>:
                 <i class="{{ ap.succ_appr_icon }} icon"></i>
+                {% if ap.succ_objected %}<i class="pointing up outline icon"></i>{% endif %}
                 &nbsp;&nbsp;<small><em>({{ ap.time_succ_appr }})</em></small>
                 {{ ap.succ_motiv|safe }}
               </div>
             {% endif %}
           </div>
+          {% if ap.ob %}
+            <div id="ap-ob-{{ ap.nr }}" class="ui black segment" hidden="hidden">
+              <div class="ui small header">
+                {{ lang|phrase:'Instructor_judgement' }}
+                <span style="font-size: smaller; font-weight: normal; font-style:italic">
+                  ({{ ap.ob_time_decided}})
+                </span>
+               </div>
+              <div class="ui grey secondary segment">
+                {{ ap.ob.grade_motivation|safe }}
+              </div>
+              <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+                {% if ap.ob_prior_grade %}
+                  <label><strong>{{ lang|phrase:'Instructor_prior_rating' }}:</strong></label>
+                  <div class="ui orange star rating disabled" data-rating="{{ ap.ob_prior_grade }}" data-max-rating="5"></div>
+                {% endif %}
+                <label><strong>{{ lang|phrase:'Instructor_rating' }}:</strong></label>
+                <div class="ui yellow star rating disabled" data-rating="{{ ap.ob_grade }}" data-max-rating="5"></div>
+              </div>
+              <div style="margin-bottom: 0.5em">
+                {{ ap.ob_penalties_as_text|safe }}
+              </div>
+            </div>
+          {% endif %}
         </div>
       {% endfor %}  
     </div>
   {% endif %}
   
   
-  {% if object.progress == 0 %}
+  {% if not committed %}
     <div class="ui blue inverted segment">
       {{ lang|phrase:'Never_started' }}
     </div>
@@ -440,7 +509,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           </a>
         </div>
       {% endif %}
-      <div id="rh-{{ s.step_nr }}-assigned" class="ui olive segment">
+      <div id="rh-{{ s.step_nr }}-assigned" class="ui top attached olive segment">
         <p style="font-size: small; font-style: italic">
           {{ s.Assigned_to_you }}
           {% if identify and s.assignment.predecessor %}
@@ -456,6 +525,29 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {{ lang|phrase:'Your_task' }}
         </div>
         {{ s.desc|safe }}
+      </div>
+      <div class="ui bottom attached secondary segment">
+        <div class="ui basic segment" style="margin: -1em">
+          <span style="font-weight: bold; margin-right: 1em">
+            {{ lang|phrase:'Review_instructions_for_step' }}
+          </span>
+          <a id="show-instr-btn-{{ s.step_nr }}"
+             class="ui tiny olive icon button"
+             onclick="showReviewInstructions('{{ s.step_nr }}');">
+            {{ lang|phrase:'Show' }}
+            <i class="unhide icon"></i>
+          </a>
+          <a id="hide-instr-btn-{{ s.step_nr }}"
+             class="ui tiny basic olive icon button"
+             style="display: none"
+             onclick="hideReviewInstructions('{{ s.step_nr }}');">
+            {{ lang|phrase:'Hide' }}
+            <i class="hide icon"></i>
+          </a>
+        </div>
+        <div id="rev-instr-{{ s.step_nr }}" class="ui segment" style="display: none">
+          {{ s.rev_instr|safe }}
+        </div>
       </div>
       {# NOTE: remedy that if participant has not saved review, downloads do not show #}
       {% if not s.pred_reviews %}
@@ -575,7 +667,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% endif %}
           {{ r.object.grade_motivation|safe }}
           <label><strong>{{ lang|phrase:'Your_rating' }}:</strong></label>
-          <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+          <div class="ui yellow star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
           {% if r.object.is_rejection %}
             <div class="ui raised segment">
               <div class="ui small header">
@@ -602,7 +694,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
               {% if r.object.is_appeal %}
                <div class="ui raised secondary segment">
                  <div class="ui small header">
-                   <i class="pointing up icon"></i>
+                   <i class="pointing up outline icon"></i>
                    <div class="content">
                      {{ lang|phrase:'Predecessor_appealed' }}
                    </div>
@@ -631,7 +723,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% if r.time_assigned %}
             <div class="ui secondary segment">
               <p style="font-size: small; font-style: italic">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
                 {% if r.time_first_viewed %}
                   {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
@@ -651,13 +743,18 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   </div>
                 </div>
                 {{ r.ref_motiv|safe }}
+                {% if r.ref_prior_rat %}
+                  <label><strong>{{ lang|phrase:'Referee_on_pred_prior_work' }}:</strong></label>
+                  <div class="ui orange star rating" data-rating="{{ r.ref_prior_rat }}" data-max-rating="5"></div><br>
+                {% endif %}
                 <label><strong>{{ lang|phrase:'Referee_on_pred_work' }}:</strong></label>
-                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <div class="ui yellow star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
                 <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
                 {% if r.time_your_appr %}
                   <div>
                     <strong>{{ lang|phrase:'Your_dec_appraisal' }}</strong>:
                     <i class="{{ r.your_appr_icon }} icon"></i>
+                    {% if r.you_objected %}<i class="pointing up outline icon"></i>{% endif %}
                     &nbsp;&nbsp;<small><em>({{ r.time_your_appr }})</em></small>
                   </div>
                   {{ r.your_motiv|safe }}
@@ -666,18 +763,42 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   <div>
                     <strong>{{ lang|phrase:'Other_dec_appraisal' }}</strong>:
                     <i class="{{ r.other_appr_icon }} icon"></i>
+                    {% if r.other_objected %}<i class="pointing up outline icon"></i>{% endif %}
                     {# NOTE: here, too, time is showed to instructors only #}
                     {% if identify %}
                       &nbsp;&nbsp;<small><em>({{ r.time_other_appr }})</em>
+                      &larr;
                       {% if no_names %}
-                        #({{ r.object.reviewer.student.id }})
+                        #({{ r.object.assignment.participant.student.id }})
                       {% else %}
-                        {{ r.object.reviewer.student.dummy_name }}
+                        {{ r.object.assignment.participant.student.dummy_name }}
                       {% endif %}
                       </small>
                     {% endif %}
                   </div>
                   {{ r.other_motiv|safe }}
+                {% endif %}
+                {% if r.ob %}
+                  <div id="ap-ob-{{ ap.nr }}" class="ui black segment">
+                    <div class="ui small header">
+                      {{ lang|phrase:'Instructor_judgement' }}
+                      <span style="font-size: smaller; font-weight: normal; font-style:italic">
+                        ({{ r.ob_time_decided}})
+                      </span>
+                    </div>
+                    {{ r.ob.grade_motivation|safe }}
+                    <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+                      {% if r.ob_prior_grade %}
+                        <label><strong>{{ lang|phrase:'Instructor_prior_rating' }}:</strong></label>
+                        <div class="ui orange star rating disabled" data-rating="{{ r.ob_prior_grade }}" data-max-rating="5"></div>
+                      {% endif %}
+                      <label><strong>{{ lang|phrase:'Instructor_rating' }}:</strong></label>
+                      <div class="ui yellow star rating disabled" data-rating="{{ r.ob_rat }}" data-max-rating="5"></div>
+                    </div>
+                    <div style="margin-bottom: 0.5em">
+                      {{ r.ob_penalties_as_text|safe }}
+                    </div>
+                  </div>
                 {% endif %}
               {% endif %}
             </div>
@@ -768,7 +889,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% endif %}
           {{ r.object.grade_motivation|safe }}
           <label><strong>{{ lang|phrase:'Successor_rating' }}:</strong></label>
-          <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+          <div class="ui yellow star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
         </div>
         {% if r.object.is_rejection %}
           <div class="ui secondary segment">
@@ -820,7 +941,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% if r.object.is_appeal %}
             <div class="ui segment">
               <div class="ui tiny header">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 <div class="content">
                   {{ lang|phrase:'You_have_appealed' }}
                 </div>
@@ -831,7 +952,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
             <div class="ui segment">
               <div class="basic segment" style="font-size: small">
                 <div class="ui small header">
-                  <i class="talk icon"></i>
+                  <i class="comment dots outline icon"></i>
                   <div class="content">
                     {{ r.imp_opinion|safe }}
                   </div>
@@ -846,7 +967,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% if r.time_assigned %}
             <div class="ui secondary segment">
               <p style="font-size: small; font-style: italic">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
                 {% if r.time_first_viewed %}
                   {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
@@ -866,13 +987,18 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   </div>
                 </div>
                 {{ r.ref_motiv|safe }}
+                {% if r.ref_prior_rat %}
+                  <label><strong>{{ lang|phrase:'Referee_on_your_prior_work' }}:</strong></label>
+                  <div class="ui orange star rating" data-rating="{{ r.ref_prior_rat }}" data-max-rating="5"></div><br>
+                {% endif %}
                 <label><strong>{{ lang|phrase:'Referee_on_your_work' }}:</strong></label>
-                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <div class="ui yellow star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
                 <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
                 {% if r.time_your_appr %}
                   <div>
                     <strong>{{ lang|phrase:'Your_dec_appraisal' }}</strong>:
                     <i class="{{ r.your_appr_icon }} icon"></i>
+                    {% if r.you_objected %}<i class="pointing up outline icon"></i>{% endif %}
                     &nbsp;&nbsp;<small><em>({{ r.time_your_appr }})</em></small>
                   </div>
                   {{ r.your_motiv|safe }}
@@ -881,19 +1007,42 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   <div>
                     <strong>{{ lang|phrase:'Other_dec_appraisal' }}</strong>:
                     <i class="{{ r.other_appr_icon }} icon"></i>
+                    {% if r.other_objected %}<i class="pointing up outline icon"></i>{% endif %}
                     {# NOTE: here, too, time is shown only to instructors #}
                     {% if identify %}
                       &nbsp;&nbsp;<small><em>({{ r.time_other_appr }})</em>
                       &larr;
                       {% if no_names %}
-                        #({{ r.object.reviewer.student.id }})
+                        #({{ r.object.assignment.participant.student.id }})
                       {% else %}
-                        {{ r.object.reviewer.student.dummy_name }}
+                        {{ r.object.assignment.participant.student.dummy_name }}
                       {% endif %}
                       </small>
                     {% endif %}
                   </div>
                   {{ r.other_motiv|safe }}
+                {% endif %}
+                {% if r.ob %}
+                  <div class="ui black segment">
+                    <div class="ui small header">
+                      {{ lang|phrase:'Instructor_judgement' }}
+                      <span style="font-size: smaller; font-weight: normal; font-style:italic">
+                        ({{ r.ob_time_decided}})
+                      </span>
+                    </div>
+                    {{ r.ob.grade_motivation|safe }}
+                    <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+                      {% if r.ob_prior_grade %}
+                        <label><strong>{{ lang|phrase:'Instructor_prior_rating' }}:</strong></label>
+                        <div class="ui orange star rating disabled" data-rating="{{ r.ob_prior_grade }}" data-max-rating="5"></div>
+                      {% endif %}
+                      <label><strong>{{ lang|phrase:'Instructor_rating' }}:</strong></label>
+                      <div class="ui yellow star rating disabled" data-rating="{{ r.ob_rat }}" data-max-rating="5"></div>
+                    </div>
+                    <div style="margin-bottom: 0.5em">
+                      {{ r.ob_penalties_as_text|safe }}
+                    </div>
+                  </div>
                 {% endif %}
               {% endif %}
             </div>
@@ -917,11 +1066,11 @@ function itemAppraisalAsHtml(rating, ap_str) {
       <div class="ui top attached secondary segment">
         {{ r.case_title }}
       </div>
-      <div class="ui {% if not r.case_hex %}bottom {% endif %}attached segment">
+      <div class="ui attached segment">
         {{ r.case|safe }}
       </div>
       {% if r.case_hex %}
-        <div class="ui bottom attached secondary segment">
+        <div class="ui attached secondary segment">
           <em><strong>{{ lang|phrase:'Case_has_attachment' }}</strong></em>
           <a class="ui mini black button" href="download/case/{{ s.case_hex }}"
              style="margin-left: 2em">
@@ -930,6 +1079,29 @@ function itemAppraisalAsHtml(rating, ap_str) {
           </a>
         </div>
       {% endif %}
+      <div class="ui bottom attached secondary segment">
+        <div class="ui basic segment" style="margin: -1em">
+          <span style="font-weight: bold; margin-right: 1em">
+            {{ lang|phrase:'Review_instructions_for_step' }}
+          </span>
+          <a id="show-instr-btn-fr{{ r.nr }}"
+             class="ui tiny olive icon button"
+             onclick="showReviewInstructions('fr{{ r.nr }}');">
+            {{ lang|phrase:'Show' }}
+            <i class="unhide icon"></i>
+          </a>
+          <a id="hide-instr-btn-fr{{ r.nr }}"
+             class="ui tiny basic olive icon button"
+             style="display: none"
+             onclick="hideReviewInstructions('fr{{ r.nr }}');">
+            {{ lang|phrase:'Hide' }}
+            <i class="hide icon"></i>
+          </a>
+        </div>
+        <div id="rev-instr-fr{{ r.nr }}" class="ui segment" style="display: none">
+          {{ r.rev_instr|safe }}
+        </div>
+      </div>
       <div id="rh-fr{{ r.nr }}-downloaded" class="ui blue segment">
         <p style="font-size: small; font-style: italic">
           {{ lang|phrase:'You_downloaded_on' }} {{r.time_first_download }}
@@ -989,7 +1161,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
       {% endif %}
       {{ r.object.grade_motivation|safe }}
       <label><strong>{{ lang|phrase:'Your_rating' }}:</strong></label>
-      <div class="ui star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
+      <div class="ui yellow star rating" data-rating="{{ r.object.grade }}" data-max-rating="5"></div>
       {%  if r.time_appraised %}
         <div class="ui secondary segment">
           <div class="ui small header">
@@ -1008,7 +1180,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% if r.object.is_appeal %}
             <div class="ui raised secondary segment">
               <div class="ui small header">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 <div class="content">
                   {{ lang|phrase:'Predecessor_appealed' }}
                 </div>
@@ -1023,7 +1195,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
           {% if r.time_assigned %}
             <div class="ui secondary segment">
               <p style="font-size: small; font-style: italic">
-                <i class="pointing up icon"></i>
+                <i class="pointing up outline icon"></i>
                 {{ lang|phrase:'Appeal_assigned_on' }} {{ r.time_assigned }}.&nbsp;&nbsp;
                 {% if r.time_first_viewed %}
                   {{ lang|phrase:'Appeal_first_viewed_on' }} {{ r.time_first_viewed }}.&nbsp;&nbsp;
@@ -1043,8 +1215,12 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   </div>
                 </div>
                 {{ r.ref_motiv|safe }}
+                {% if r.ref_prior_rat %}
+                  <label><strong>{{ lang|phrase:'Referee_on_pred_prior_work' }}:</strong></label>
+                  <div class="ui orange star rating" data-rating="{{ r.ref_prior_rat }}" data-max-rating="5"></div>
+                {% endif %}
                 <label><strong>{{ lang|phrase:'Referee_on_pred_work' }}:</strong></label>
-                <div class="ui star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
+                <div class="ui yellow star rating" data-rating="{{ r.ref_rat }}" data-max-rating="5"></div>
                 <p style="margin-top: 0.5em">{{ r.penalties|safe }}</p>
                 {% if r.time_your_appr %}
                   <div>
@@ -1065,6 +1241,28 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   </div>
                   {{ r.other_motiv|safe }}
                 {% endif %}
+                {% if r.ob %}
+                  <div class="ui black segment">
+                    <div class="ui small header">
+                      {{ lang|phrase:'Instructor_judgement' }}
+                      <span style="font-size: smaller; font-weight: normal; font-style:italic">
+                        ({{ r.ob_time_decided}})
+                      </span>
+                    </div>
+                    {{ r.ob.grade_motivation|safe }}
+                    <div class="ui basic clearing segment" style="margin: -0.5em -1em -0.5em -1em">
+                      {% if r.ob_prior_grade %}
+                        <label><strong>{{ lang|phrase:'Instructor_prior_rating' }}:</strong></label>
+                        <div class="ui orange star rating disabled" data-rating="{{ r.ob_prior_grade }}" data-max-rating="5"></div>
+                      {% endif %}
+                      <label><strong>{{ lang|phrase:'Instructor_rating' }}:</strong></label>
+                      <div class="ui yellow star rating disabled" data-rating="{{ r.ob_rat }}" data-max-rating="5"></div>
+                    </div>
+                    <div style="margin-bottom: 0.5em">
+                      {{ r.ob_penalties_as_text|safe }}
+                    </div>
+                  </div>
+                {% endif %}
               {% endif %}
             </div>
           {% endif %}
@@ -1084,7 +1282,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
   <div id="progress-header" class="header" style="margin-top: -3em">
     {{ lang|phrase:'Progress_chart' }}
   </div>
-  <div class="image content" style="margin-top:-1em">
+  <div class="ui fluid image content" style="margin-top:-1em">
     <img class="image" src="progress/p/{{ hex }}">
   </div>
 </div>

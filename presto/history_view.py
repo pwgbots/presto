@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -36,25 +32,57 @@ from django.shortcuts import render
 from django.utils import timezone
 
 from .models import (
-    Appeal, Assignment,
-    Course, CourseEstafette, CourseStudent,
+    Appeal,
+    Assignment,
+    Course,
+    CourseEstafette,
+    CourseStudent,
     DEFAULT_DATE,
-    Estafette, EstafetteCase, EstafetteLeg,
-    Participant, PeerReview,
-    UserDownload
-)
+    Estafette,
+    EstafetteCase,
+    EstafetteLeg,
+    Objection,
+    Participant,
+    PeerReview
+    )
 
 # presto modules
-from presto.generic import change_role, generic_context, has_role, report_error
-from presto.utils import (decode, encode, log_message, prefixed_user_name,
-    DATE_FORMAT, DATE_TIME_FORMAT, EDIT_STRING, FACES)
+from presto.generic import (
+    change_role,
+    generic_context,
+    has_role,
+    report_error
+    )
+from presto.teams import (
+    team_as_html,
+    team_assignments,
+    team_final_reviews,
+    team_given_reviews,
+    team_submissions,
+    team_user_downloads,
+    things_to_do
+    )
+from presto.utils import (
+    COLORS,
+    DATE_FORMAT,
+    DATE_TIME_FORMAT,
+    decode,
+    EDIT_STRING,
+    encode,
+    FACES,
+    log_message,
+    OPINIONS,
+    prefixed_user_name,
+    ui_img,
+    YOUR_OPINIONS
+    )
 
-# colors to mark decision appreciation segments
-COLORS = ['', 'green', 'yellow', 'red']
 
-# view for history page (for students)
 @login_required(login_url=settings.LOGIN_URL)
 def history_view(request, **kwargs):
+    """
+    Return the view for a student's project relay history.
+    """
     h = kwargs.get('hex', '')
     context = generic_context(request, h)
     # check whether user can have student role
@@ -65,9 +93,12 @@ def history_view(request, **kwargs):
     cl = Course.objects.filter(coursestudent__user=context['user']
         ).annotate(count=Count('coursestudent'))
     # add this list in readable form to the context (showing multiple enrollments)
-    context['course_list'] = ',&nbsp;&nbsp; '.join(
-        [c.title() + (' <span style="font-weight: 800; color: red">%d&times;</span>' %
-            c.count if c.count > 1 else '') for c in cl
+    context['course_list'] = ',&nbsp;&nbsp; '.join([
+        c.title() + (
+            ' <span style="font-weight: 800; color: red">{}&times;</span>'.format(
+                c.count if c.count > 1 else ''
+                )
+            ) for c in cl
         ])
 
     # student (but also instructor in that role) may be enrolled in several courses
@@ -86,7 +117,7 @@ def history_view(request, **kwargs):
         ).order_by('-estafette__start_time')
     
     # if user is a "focused" dummy user, retain only this course user's participations
-    if context.has_key('alias'):
+    if 'alias' in context:
         pl = pl.filter(student=context['csid'])
 
     # if h is not set, show the list of participations as a menu
@@ -104,7 +135,7 @@ def history_view(request, **kwargs):
                     'next_deadline': p.estafette.next_deadline(),
                     'steps': steps,
                     'hex': encode(p.id, context['user_session'].encoder),
-                    'progress': '%d/%d' % (p.submitted_steps(), steps),
+                    'progress': team_submissions(p),
                     }
             context['participations'].append(part)
         # and show the list as a menu
@@ -120,7 +151,7 @@ def history_view(request, **kwargs):
         # encode again, because used to get progress chart
         context['hex'] = encode(p.id, context['user_session'].encoder)
         # add progress bar data
-        context['things_to_do'] = p.things_to_do()
+        context['things_to_do'] = things_to_do(p)
         # do not add participant name popups
         context['identify'] = False
         # add context fields to be displayed when rendering the template
@@ -129,7 +160,7 @@ def history_view(request, **kwargs):
         context['page_title'] = 'Presto History' 
         return render(request, 'presto/estafette_history.html', context)        
             
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
 
@@ -140,89 +171,41 @@ def set_history_properties(context, p):
     lang = p.estafette.course.language
     # add the language-sensitive properties to the context
     context['lang'] = lang
+    context['committed'] = p.time_started > DEFAULT_DATE
     context['last_action'] = lang.ftime(p.student.last_action)
     context['start'] = lang.ftime(p.estafette.start_time)
     context['end'] = lang.ftime(p.estafette.end_time)
     context['desc'] = p.estafette.estafette.description
     context['next_deadline'] = p.estafette.next_deadline()
+    context['team'] = team_as_html(p)
     context['decisions'] = []
     
     # NOTE: first see whether participant has decided on appeals in this estafette
     ap_list = Appeal.objects.filter(referee__user=p.student.user
-        ).filter(review__reviewer__estafette=p.estafette).exclude(time_decided=DEFAULT_DATE)
+        ).filter(review__reviewer__estafette=p.estafette).exclude(time_decided=DEFAULT_DATE
+        ).order_by('time_decided')
     if ap_list:
-        # create a list of decided appeals for each course estafette
+        # create a list of decided appeals for this course estafette
         ap_nr = 0
         for ap in ap_list:
             ap_nr += 1
             # add the appeal that has been decided
-            ar = ap.review
-            a = ar.assignment
-            ap_dict = {
-                'nr': ap_nr,
-                'appeal': ap,
-                'appeal_title': '%s %s%s <span style="margin-left: 1em; font-weight: 500">(%s)</span>' % (
-                    lang.phrase('Appeal_case_decision'), a.case.letter, str(a.leg.number),
-                    lang.ftime(ap.time_decided)),
-                # show names only to instructors
-                'show_names': has_role(context, 'Instructor'),
-                # add assignment properties
-                'case_title': '%s %s: %s' % (lang.phrase('Case'), a.case.letter, a.case.name),
-                'case_desc': a.case.description,
-                'step_title': '%s %s: %s' % (lang.phrase('Step'), a.leg.number, a.leg.name),
-                'step_desc': a.leg.description,
-                'author': a.participant.student.dummy_name(),
-                'time_uploaded': lang.ftime(a.time_uploaded),
-                'pred_file_list': a.leg.file_list,
-                'pred_hex': encode(a.id, context['user_session'].encoder),
-                # add properties of the review that is appealed against
-                'review': ar,
-                'rev_items': ar.item_list(),
-                'reviewer': ar.reviewer.student.dummy_name(),
-                'time_reviewed': lang.ftime(ar.time_submitted),
-                'time_appealed': lang.ftime(ar.time_appraised),
-                # add properties concerning the appeal (but attributes of the PeerReview object)
-                'imp_opinion': lang.phrase('Pred_opinion_succ_work') % lang.phrase(['Pass',
-                    'No_improvement', 'Minor_changes', 'Good_job'][ar.improvement_appraisal]),
-                'time_assigned': lang.ftime(ar.time_appeal_assigned),
-                # add appeal properties
-                'time_viewed': lang.ftime(ap.time_first_viewed),
-                'penalties_as_text': lang.penalties_as_text(ap.predecessor_penalty, ap.successor_penalty),
-                'hex': encode(ap.id, context['user_session'].encoder)
-            }
-            # pass hex for case if it has a file attached
-            if a.case.upload:
-                ap_dict['case_hex'] = encode(a.case.id, context['user_session'].encoder)
-            # pass predecessor's appreciation of the decision (if submitted)
-            if ap.time_acknowledged_by_predecessor != DEFAULT_DATE:
-                ap_dict['time_pred_appr'] = lang.ftime(ap.time_acknowledged_by_predecessor)
-                ap_dict['pred_appr_icon'] = FACES[ap.predecessor_appraisal]
-                ap_dict['pred_appr_color'] = COLORS[ap.predecessor_appraisal]
-                ap_dict['pred_motiv'] = ap.predecessor_motivation
-                ap_dict['pred_objected'] = ap.is_contested_by_predecessor
-            # pass predecessor's appreciation of the decision (if submitted)
-            if ap.time_acknowledged_by_successor != DEFAULT_DATE:
-                ap_dict['time_succ_appr'] = lang.ftime(ap.time_acknowledged_by_successor)
-                ap_dict['succ_appr_icon'] = FACES[ap.successor_appraisal]
-                ap_dict['succ_appr_color'] = COLORS[ap.successor_appraisal]
-                ap_dict['succ_motiv'] = ap.successor_motivation
-                ap_dict['succ_objected'] = ap.is_contested_by_successor
+            ap_dict = decided_appeal_dict(context, ap, lang)
+            ap_dict['nr'] = ap_nr
             context['decisions'].append(ap_dict)
 
     # now compile a consecutive list of all the student's actions in this estafette
     # (1) get list of all assignments for the student so far (except rejections and clones!)
-    a_list = Assignment.objects.filter(participant=p).exclude(is_rejected=True
-        ).filter(clone_of__isnull=True).order_by('leg__number')
+    a_list = team_assignments(p).order_by('leg__number')
     # from this list, derive a list with only the primary keys of the assignments
     aid_list = [a.id for a in a_list]
     # (2) get list of all reviews the student has written so far
-    pr_given = PeerReview.objects.filter(reviewer=p).exclude(time_submitted=DEFAULT_DATE)
+    pr_given = team_given_reviews(p).exclude(time_submitted=DEFAULT_DATE)
     # (3) also get list of all reviews the student has received so far
     pr_received = PeerReview.objects.filter(assignment__id__in=aid_list
         ).exclude(time_submitted=DEFAULT_DATE)
     # (4) also get the "oldest" user download objects for the assignment set
-    ud_set = UserDownload.objects.filter(user=p.student.user, assignment__id__in=aid_list
-            ).annotate(first_download_at=Min('time_downloaded'))
+    ud_set = team_user_downloads(p, aid_list).annotate(first_download_at=Min('time_downloaded'))
     # process the assignments in their number sequence
     steps = []
     for a in a_list:
@@ -231,15 +214,20 @@ def set_history_properties(context, p):
         step = {
             'step_nr': step_nr,
             'assignment': a,
-            'header': lang.phrase('Step_header') % (step_nr, a.leg.name),
+            'header': lang.phrase('Step_header').format(nr=step_nr, name=a.leg.name),
             # indicate whether the student did upload this step (or file list should not be shown)
             'uploaded': (a.time_uploaded != DEFAULT_DATE),
             'time': lang.ftime(a.time_uploaded),
-            'case_title': '%s %s: %s' % (lang.phrase('Case'), a.case.letter, a.case.name),
-            'case': a.case.description,
+            'case_title': a.case.title(lang.phrase('Case')),
+            'case': ui_img(a.case.description),
             'desc': a.leg.description,
-            'Assigned_to_you': lang.phrase('Assigned_to_you') % lang.ftime(a.time_assigned),
-            'You_uploaded': lang.phrase('You_uploaded') % lang.ftime(a.time_uploaded),
+            'rev_instr': a.leg.complete_review_instruction(),
+            'Assigned_to_you': (
+                lang.phrase('Assigned_to_you') + lang.ftime(a.time_assigned)
+                ),
+            'You_uploaded': (
+                lang.phrase('You_uploaded') + lang.ftime(a.time_uploaded)
+                ),
             'upl_items': a.item_list(),
             'own_file_list': a.leg.file_list(),
             'pred_file_list': [],
@@ -274,12 +262,14 @@ def set_history_properties(context, p):
         prrl = pr_received.filter(assignment__leg__number=step_nr).order_by('time_submitted')
         for pr in prrl:
             # do not show reviews that have been saved, but for which the successor did NOT
-            # upload yet (unless it is a rejection or a FINAL review or a second opinion)
+            # upload yet (unless it is a rejection or a FINAL review or a second opinion,
+            # OR the deadline for reviews is past)
             if not (pr.is_rejection or pr.is_second_opinion or pr.final_review_index):
                 # to prevent all error, double-check whether there IS a successor
                 # NOTE: if reviewer is "instructor student", then skip the upload check
                 if pr.assignment.successor and not (pr.reviewer.student.dummy_index < 0):
-                    if pr.assignment.successor.time_uploaded == DEFAULT_DATE:
+                    if (pr.assignment.successor.time_uploaded == DEFAULT_DATE
+                        and timezone.now() < p.estafette.review_deadline):
                         continue  # skip this review, but continue looping
             r = {
                 'object': pr,
@@ -291,8 +281,9 @@ def set_history_properties(context, p):
             if pr.time_appraised != DEFAULT_DATE:
                 r['time_appraised'] = lang.ftime(pr.time_appraised)
                 r['app_icon'] = FACES[pr.appraisal]
-                r['app_header'] = lang.phrase('Your_appraisal_header') % lang.phrase(['ERROR',
-                    'You_quite_happy', 'Mixed_feelings', 'You_unhappy'][pr.appraisal])
+                r['app_header'] = lang.phrase('Your_appraisal_header').format(
+                    opinion=lang.phrase(YOUR_OPINIONS[pr.appraisal])
+                    )
             # student can see reviewer's work only if review is not a rejection,
             # a second opinion, or a final review (which has by definition no successor)
             if not (pr.is_rejection or pr.is_second_opinion or pr.final_review_index):
@@ -300,20 +291,30 @@ def set_history_properties(context, p):
                 if pr.assignment.successor:
                     step['succ_file_list'] = pr.assignment.successor.leg.file_list()
                     step['succ_hex'] = encode(pr.assignment.successor.id, context['user_session'].encoder)
-                r['imp_opinion'] = lang.phrase('Your_opinion_on_improvement') % lang.phrase(['Pass',
-                    'No_improvement', 'Minor_changes', 'Good_job'][pr.improvement_appraisal])
+                r['imp_opinion'] = ''.join([
+                    lang.phrase('Your_opinion_on_improvement'),
+                    '<tt>',
+                    lang.phrase(
+                        ['Pass', 'No_improvement', 'Minor_changes',
+                         'Good_job'][pr.improvement_appraisal]
+                        ),
+                    '</tt>'
+                    ])
             # in case of an appeal, report the appeal status
             if pr.is_appeal:
                 if pr.time_appeal_assigned != DEFAULT_DATE:
                     r['time_assigned'] = lang.ftime(pr.time_appeal_assigned)
                     ap = Appeal.objects.filter(review=pr).first()
                     if ap:
+                        # NOTE: grade may encode two scores
+                        prior_grade, grade = divmod(ap.grade, 256)
                         r['referee'] = prefixed_user_name(ap.referee.user)
                         if ap.time_first_viewed != DEFAULT_DATE:
                             r['time_first_viewed'] = lang.ftime(ap.time_first_viewed)
                         if ap.time_decided != DEFAULT_DATE:
                             r['time_decided'] = lang.ftime(ap.time_decided)
-                            r['ref_rat'] = ap.grade
+                            r['ref_prior_rat'] = prior_grade
+                            r['ref_rat'] = grade
                             r['ref_motiv'] = ap.grade_motivation
                             r['penalties'] = lang.penalties_as_text(
                                 ap.predecessor_penalty, ap.successor_penalty)
@@ -329,6 +330,17 @@ def set_history_properties(context, p):
                             r['other_appr_icon'] = FACES[ap.successor_appraisal]
                             r['other_motiv'] = ap.successor_motivation
                             r['other_objected'] = ap.is_contested_by_successor
+                        # see if this appeal may have an associated objection
+                        if ap.is_contested_by_predecessor or ap.is_contested_by_successor:
+                            ob = Objection.objects.filter(appeal=ap).exclude(time_decided=DEFAULT_DATE).first()
+                            if ob:
+                                # NOTE: again, grade may encode two scores
+                                prior_grade, grade = divmod(ob.grade, 256)
+                                r['ob'] = ob
+                                r['ob_time_decided'] = lang.ftime(ob.time_decided)
+                                r['ob_prior_rat'] = prior_grade
+                                r['ob_rat'] = grade
+                                r['ob_penalties_as_text'] = lang.penalties_as_text(ob.predecessor_penalty, ob.successor_penalty)
             # add the review to the list
             step['succ_reviews'].append(r)
         # now all step properties have been set, so the step is added to the list
@@ -346,18 +358,25 @@ def set_history_properties(context, p):
         n += 1
         r['nr'] = n
         a = pr.assignment
-        r['header'] = lang.phrase('Final_review_header') % (step_nr, a.leg.name)
-        r['case_title'] = '%s %s: %s' % (lang.phrase('Case'), a.case.letter, a.case.name)
-        r['case'] = a.case.description
+        r['header'] = lang.phrase('Final_review_header').format(
+            nr=step_nr,
+            name=a.leg.name)
+        r['case_title'] = a.case.title(lang.phrase('Case'))
+        r['case'] = a.case.description.replace(
+            '<img ',
+            '<img class="ui large image" '
+            )
         # pass hex for case if it has a file attached
         if a.case.upload:
             r['case_hex'] = encode(a.case.id, context['user_session'].encoder)
+        r['rev_instr'] = a.leg.complete_review_instruction()
+        r['pred_file_list'] = a.leg.file_list()
         context['final_reviews'].append(r)
 
 
 # returns dictionary with properties of peer review pr that are used by the rendering template
 def given_review_dict(context, pr, lang):
-    tfd = UserDownload.objects.filter(user=pr.reviewer.student.user, assignment=pr.assignment)
+    tfd = team_user_downloads(pr.reviewer, [pr.assignment.id])
     if tfd:
         tfd = tfd.first().time_downloaded
     else:
@@ -374,10 +393,18 @@ def given_review_dict(context, pr, lang):
     if pr.time_appraised != DEFAULT_DATE:
         r['time_appraised'] = lang.ftime(pr.time_appraised)
         r['app_icon'] = FACES[pr.appraisal]
-        r['app_header'] = lang.phrase('Appraisal_header') % lang.phrase(['ERROR',
-            'Quite_happy', 'Mixed_feelings', 'Unhappy'][pr.appraisal])
-        r['imp_opinion'] = lang.phrase('Opinion_on_sucessor_version') % lang.phrase(['Pass',
-            'No_improvement', 'Minor_changes', 'Good_job'][pr.improvement_appraisal])
+        r['app_header'] = lang.phrase('Appraisal_header').format(
+            opinion=lang.phrase(OPINIONS[pr.appraisal])
+            )
+        r['imp_opinion'] = ''.join([
+            lang.phrase('Opinion_on_sucessor_version'),
+            ' &nbsp;<tt>',
+            lang.phrase(
+                ['Pass', 'No_improvement', 'Minor_changes',
+                 'Good_job'][pr.improvement_appraisal]
+                ),
+            '</tt>'
+            ])
     # also indicate whether student has acknowledged
     if pr.time_acknowledged != DEFAULT_DATE:
         r['time_acknowledged'] = lang.ftime(pr.time_acknowledged)
@@ -392,7 +419,10 @@ def given_review_dict(context, pr, lang):
                     r['time_first_viewed'] = lang.ftime(ap.time_first_viewed)
                 if ap.time_decided != DEFAULT_DATE:
                     r['time_decided'] = lang.ftime(ap.time_decided)
-                    r['ref_rat'] = ap.grade
+                    # NOTE: grade may encode two scores
+                    prior_grade, grade = divmod(ap.grade, 256)
+                    r['ref_rat'] = grade
+                    r['ref_prior_rat'] = prior_grade
                     r['ref_motiv'] = ap.grade_motivation
                     r['penalties'] = lang.penalties_as_text(
                         ap.predecessor_penalty, ap.successor_penalty)
@@ -408,4 +438,93 @@ def given_review_dict(context, pr, lang):
                     r['other_appr_icon'] = FACES[ap.predecessor_appraisal]
                     r['other_motiv'] = ap.predecessor_motivation
                     r['other_objected'] = ap.is_contested_by_predecessor
+                # see if this appeal may have an associated objection
+                if ap.is_contested_by_predecessor or ap.is_contested_by_successor:
+                    ob = Objection.objects.filter(appeal=ap).exclude(time_decided=DEFAULT_DATE).first()
+                    if ob:
+                        r['ob'] = ob
+                        r['ob_time_decided'] = lang.ftime(ob.time_decided)
+                        r['ob_penalties_as_text'] = lang.penalties_as_text(ob.predecessor_penalty, ob.successor_penalty)
     return r
+
+
+# returns dict with properties of an appeal such that they can be rendered
+def decided_appeal_dict(context, ap, lang):
+    ar = ap.review
+    a = ar.assignment
+    # NOTE: grade may encode two scores
+    prior_grade, grade = divmod(ap.grade, 256)
+    d = {
+        'appeal': ap,
+        'appeal_title': '{} {}{} <span style="margin-left: 1em; font-weight: 500">({})</span>'.format(
+            lang.phrase('Appeal_case_decision'),
+            a.case.letter,
+            str(a.leg.number),
+            lang.ftime(ap.time_decided)
+            ),
+        # show names only to instructors
+        'show_names': has_role(context, 'Instructor'),
+        # add assignment properties
+        'case_title': a.case.title(lang.phrase('Case')),
+        'case_desc': ui_img(a.case.description),
+        'step_title': a.leg.title(lang.phrase('Step')),
+        'step_desc': a.leg.description,
+        'author': a.participant.student.dummy_name(),
+        'time_uploaded': lang.ftime(a.time_uploaded),
+        'pred_file_list': a.leg.file_list,
+        'pred_hex': encode(a.id, context['user_session'].encoder),
+        # add properties of the review that is appealed against
+        'review': ar,
+        'rev_items': ar.item_list(),
+        'reviewer': ar.reviewer.student.dummy_name(),
+        'time_reviewed': lang.ftime(ar.time_submitted),
+        'time_appealed': lang.ftime(ar.time_appraised),
+        # add properties concerning the appeal (but attributes of the PeerReview object)
+        'imp_opinion': ''.join([
+            lang.phrase('Pred_opinion_succ_work'),
+            ' &nbsp;<tt>',
+            lang.phrase(['Pass', 'No_improvement', 'Minor_changes',
+                         'Good_job'][ar.improvement_appraisal]),
+            '</tt>'
+            ]),
+        'time_assigned': lang.ftime(ar.time_appeal_assigned),
+        # add appeal properties
+        'time_decided': lang.ftime(ap.time_decided),
+        'prior_grade': prior_grade,
+        'grade': grade,
+        'penalties_as_text': lang.penalties_as_text(ap.predecessor_penalty, ap.successor_penalty),
+        'hex': encode(ap.id, context['user_session'].encoder)
+    }
+    # pass time first viewed only if such view occurred
+    if ap.time_first_viewed != DEFAULT_DATE:
+        d['time_viewed'] = lang.ftime(ap.time_first_viewed)
+    # pass hex for case if it has a file attached
+    if a.case.upload:
+        d['case_hex'] = encode(a.case.id, context['user_session'].encoder)
+    # pass predecessor's appreciation of the decision (if submitted)
+    if ap.time_acknowledged_by_predecessor != DEFAULT_DATE:
+        d['time_pred_appr'] = lang.ftime(ap.time_acknowledged_by_predecessor)
+        d['pred_appr_icon'] = FACES[ap.predecessor_appraisal]
+        d['pred_appr_color'] = COLORS[ap.predecessor_appraisal]
+        d['pred_motiv'] = ap.predecessor_motivation
+        d['pred_objected'] = ap.is_contested_by_predecessor
+    # pass predecessor's appreciation of the decision (if submitted)
+    if ap.time_acknowledged_by_successor != DEFAULT_DATE:
+        d['time_succ_appr'] = lang.ftime(ap.time_acknowledged_by_successor)
+        d['succ_appr_icon'] = FACES[ap.successor_appraisal]
+        d['succ_appr_color'] = COLORS[ap.successor_appraisal]
+        d['succ_motiv'] = ap.successor_motivation
+        d['succ_objected'] = ap.is_contested_by_successor
+    # see if this appeal may have an associated objection
+    if ap.is_contested_by_predecessor or ap.is_contested_by_successor:
+        ob = Objection.objects.filter(appeal=ap).exclude(time_decided=DEFAULT_DATE).first()
+        if ob:
+            # NOTE: grade may encode two scores
+            prior_grade, grade = divmod(ob.grade, 256)
+            d['ob'] = ob
+            d['ob_time_decided'] = lang.ftime(ob.time_decided)
+            d['ob_prior_grade'] = prior_grade
+            d['ob_grade'] = grade
+            d['ob_penalties_as_text'] = lang.penalties_as_text(ob.predecessor_penalty, ob.successor_penalty)
+    return d
+

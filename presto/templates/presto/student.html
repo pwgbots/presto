@@ -1,12 +1,11 @@
-{% extends "base-with-menus.html" %}
-
+{% extends "./base-with-menus.html" %}
 {% comment %}
 
 Software developed by Pieter W.G. Bots for the PrESTO project
 Code repository: https://github.com/pwgbots/presto
 Project wiki: http://presto.tudelft.nl/wiki
 
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -26,13 +25,12 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 {% endcomment %}
-
 {% load static %}
 {% load presto_filters %}
 
 {% block headlines %}
-  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-  <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+  <link href="{% static 'presto/quill.snow.css' %}" rel="stylesheet">
+  <script src="{% static 'presto/quill.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/rating.css' %}">
   <script type="text/javascript" src="{% static 'presto/dist/components/rating.js' %}"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'presto/dist/components/modal.css' %}">
@@ -50,6 +48,14 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   padding: 2px;
   background-color: rgba(0, 0, 0, 0.05);
 }
+blockquote {
+  border-left: 4px solid #00a6d6;
+  margin-bottom: 5px;
+  margin-top: 5px;
+  padding-left: 16px;
+  font-size: 90%;
+  background-color: #dff0ff;
+}
 {% endblock styles %}
 
 {% block component_inits %}
@@ -62,13 +68,28 @@ ERROR_QUILL = new Quill('#error-quill-editor', {
       [{ header: [2, 3, 4, false] }],
       ['bold', 'italic', 'underline'],
       [{ 'script': 'sub'}, { 'script': 'super' }],
-      ['blockquote'],
+      ['blockquote', 'link'],
       [{ list: 'ordered' }, { list: 'bullet' }]
     ]
   },
   placeholder: '(no input text found)',
   theme: 'snow',
-  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'header', 'list']
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'link', 'header', 'list']
+});
+
+QUESTION_QUILL = new Quill('#question-quill-editor', {
+  modules: {
+    toolbar: [
+      [{ header: [2, 3, 4, false] }],
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      ['blockquote', 'link'],
+      [{ list: 'ordered' }, { list: 'bullet' }]
+    ]
+  },
+  placeholder: '(stel hier je vraag)',
+  theme: 'snow',
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'link', 'header', 'list']
 });
 
 QUILL = new Quill('#quill-editor', {
@@ -77,13 +98,13 @@ QUILL = new Quill('#quill-editor', {
       [{ header: [2, 3, 4, false] }],
       ['bold', 'italic', 'underline'],
       [{ 'script': 'sub'}, { 'script': 'super' }],
-      ['blockquote'],
+      ['blockquote', 'link'],
       [{ list: 'ordered' }, { list: 'bullet' }]
     ]
   },
   placeholder: '(item instructions)',
   theme: 'snow',
-  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'header', 'list']
+  formats: ['bold', 'italic', 'underline', 'script', 'blockquote', 'link', 'header', 'list']
 });
 
 QUILL.on('text-change', function(delta, oldDelta, source) {
@@ -101,6 +122,10 @@ QUILL.on('text-change', function(delta, oldDelta, source) {
     }
   }
 });
+
+$('#error-modal').modal();
+$('#question-modal').modal();
+$('#question-submitted-modal').modal();
 
 {% for p in participations %}{% for t in p.tasks %}
 
@@ -163,6 +188,9 @@ QUILL.on('text-change', function(delta, oldDelta, source) {
 
 {% elif t.type == 'APPR-DEC' %}
 
+  {% if t.scoring_system == 2 %}
+    $('#ref-prior-rat-{{ p.nr }}-{{ t.nr }}').rating('disable');
+  {% endif %}
   $('#ref-rat-{{ p.nr }}-{{ t.nr }}').rating('disable');
   $('#edit-appr-{{ p.nr }}-{{ t.nr }}').hide();
   $('#save-btn-appr-{{ p.nr }}-{{ t.nr }}').hide();
@@ -181,17 +209,22 @@ QUILL.on('text-change', function(delta, oldDelta, source) {
 
 {% endfor %}{% endfor %}
 
-{% if appeal %}
-  {% for ri in appeal.rev_items %}
+{% if referee_case %}
+  {% for ri in referee_case.rev_items %}
     $('#appeal-itap-{{ ri.item.number }}').html(
         itemAppraisalAsHtml({{ ri.rating }}, '{{ ri.item.appraisal }}'));
   {% endfor %}
   $('#dec-rat').rating('disable');
+  {% if referee_case.scoring_system == 2 %}$('#dec-prior-rat').rating('disable');{% endif %}
   $('#appeal-rev-rat').rating('disable');
+  {% if referee_case.ob %}
+    $('#appeal-dec-rat').rating('disable');
+    {% if referee_case.scoring_system == 2 %}$('#appeal-dec-prior-rat').rating('disable');{% endif %}
+  {% endif %}
   $('#edit-dec').hide();
   $('#edit-penalty').hide();
   $('#save-btn-dec').hide();
-  {%if appeal.words >= appeal.min_words and appeal.object.grade > 0 %}
+  {% if referee_case.words >= referee_case.min_words and referee_case.graded %}
     $('#submit-dec-btn').removeClass('disabled');
   {% else %}
     $('#submit-dec-btn').addClass('disabled');
@@ -207,6 +240,11 @@ QUILL.on('text-change', function(delta, oldDelta, source) {
       window.location.replace('student/referee-appeal/' + REVIEW_HEX);
     }
   });
+  $('#confirm-decide-{{ l.code}}').modal({
+    onApprove: function() {
+      window.location.replace('student/referee-objection/' + APPEAL_HEX);
+    }
+  });
   $('#confirm-post-review-{{ l.code}}').modal({
     onApprove: function() {
       window.location.replace('student/post-review/' + ASSIGNMENT_HEX);
@@ -216,6 +254,10 @@ QUILL.on('text-change', function(delta, oldDelta, source) {
 
 {% for ce in ce_appeals %}
   $('#appeal-{{ ce.nr }}-list').hide();
+{% endfor %}
+
+{% for ce in ce_objections %}
+  $('#objection-{{ ce.nr }}-list').hide();
 {% endfor %}
 
 {% for ie in instructor_estafettes %}
@@ -232,10 +274,11 @@ setInterval(nextMinute, 60000);
 {% block javascripts %}
 
 {# NOTE: ID of review-with-appeal to be refereed (REVIEW_HEX) is set in agreeToReferee() #}
+{# ID of appeal-with-objection to be decided by instructor (APPEAL_HEX) is set in agreeToDecide() #}
 {# ID of assignment to be post-reviewed by instructor (ASSIGNMENT_HEX) is set in agreeToPostReview() #}
 
-var REVIEW_HEX = '', ASSIGNMENT_HEX = '', NR_TO_REJECT = 0, NR_TO_APPEAL = 0;
-var QUILL, ERROR_QUILL, OPEN_QUILL = null;
+var REVIEW_HEX = '', APPEAL_HEX = '', ASSIGNMENT_HEX = '', NR_TO_REJECT = 0, NR_TO_APPEAL = 0;
+var QUILL, QUESTION_QUILL, ERROR_QUILL, OPEN_QUILL = null;
 
 function quillStillOpen() {
   if (OPEN_QUILL) {
@@ -324,6 +367,48 @@ function hideReviewInstructions(nr) {
 function enableProceed(nr) {
   $('#decl-seg-' + nr).hide();
   $('#proceed-btn-' + nr).removeClass('disabled');
+}
+
+function percQuotes(str) {
+  return str.replace(/\%\%/g, '"');
+}
+
+function showQuestionModal(qheader, qprompt, qsubmit, qcancel, hex, c) {
+  $('#question-header').html(qheader);
+  $('#question-prompt').html(qprompt);
+  $('#question-submit').html(qsubmit);
+  $('#question-cancel').html(qcancel);
+  $('#question-hex').html(hex);
+  $('#question-case').html(c);
+  $('#question-modal').modal('show');
+  QUESTION_QUILL.setContents([{ insert: '\n' }]);
+  QUESTION_QUILL.focus();
+}
+
+function submitQuestion() {
+  var obj = {
+    a: 'submit question',
+    h: $('#question-hex').html(),
+    c: $('#question-case').html(),
+    q: QUESTION_QUILL.container.querySelector('.ql-editor').innerHTML
+  };
+  console.log(obj);
+  $.post('ajax', obj, function(response, status, xhr) {
+    if (status == 'error') {
+      alert('Server error: ' + xhr.status + ' ' + xhr.statusText);
+    } else {
+      $('#question-modal').modal('hide');
+      json = JSON.parse(response);
+      if (json.error != null) {
+        showErrorModal(json.error, obj.q);
+      } else {
+        $('#qs-header').html(json.hdr);
+        $('#qs-question').html(json.qst);
+        $('#qs-message').html(json.msg);
+        $('#question-submitted-modal').modal('show');
+      }
+    }
+  });
 }
 
 function showErrorModal(msg, html) {
@@ -464,7 +549,8 @@ function enableItemAppraisal(r_nr, i_nr, ap_str, ric) {
   var rating = Math.min(n, parseInt($('#' + itap + '-inp').val()));
   console.log('ENAB: n = ' + n + '; rating = ' + rating);
   if (ap[0] == 'rating') {
-    html = '<div id="' + itap + '-rat" class="ui tiny ' + ap[2] + ' rating" data-rating="' + rating +
+    html = '<div id="' + itap + '-rat" class="ui tiny yellow ' + ap[2] +
+        ' rating" data-rating="' + rating +
         '" data-max-rating="' + n + '"></div>';
     $('#' + itap).html(html);
     $('#' + itap + '-rat').rating('setting', 'onRate', function(value) {
@@ -663,9 +749,9 @@ function saveAppraisal(nr, hex) {
       } else {
         if ($('#appr-type-' + nr).val() == 0) {
           $('#edit-imp-' + nr).hide();
-          $('#appr-btns-' + nr).css('pointer-events', 'none');
           $('#view-imp-' + nr).show();
         }
+        $('#appr-btns-' + nr).css('pointer-events', 'none');
         updateAppraisalButtons(nr);
       }
     }
@@ -730,14 +816,39 @@ function agreeToReferee(lng, hex, step_nr, case_letter) {
   $('#confirm-referee-' + lng).modal('show');
 }
 
-{% if appeal %}
+function agreeToDecide(lng, hex, step_nr, case_letter) {
+  APPEAL_HEX = hex;  {# global variable! #}
+  $('#appeal-case-' + lng).html(case_letter + step_nr);
+  $('#confirm-decide-' + lng).modal('show');
+}
+
+{% if referee_case %}
+
+function showPriorReviewInstructions() {
+  $('#prior-rev-instr').show();
+  $('#show-prior-rev-instr-btn').hide();
+  $('#hide-prior-rev-instr-btn').show();
+}
+
+function hidePriorReviewInstructions() {
+  $('#prior-rev-instr').hide();
+  $('#show-prior-rev-instr-btn').show();
+  $('#hide-prior-rev-instr-btn').hide();
+}
 
 function saveDecision(hex) {
   closeQuill();
   var obj = {
     a: 'save decision',
     h: hex,
+    {% if referee_case.ob %}
+      {# referee ID hex is passed to signal that this case concerns an objection #}
+      rh: '{{ referee_case.referee_hex }}',
+    {% endif %}
     dr: $('#dec-rat').rating('get rating'),
+    {% if referee_case.scoring_system == 2 %}
+      dpr: $('#dec-prior-rat').rating('get rating'),
+    {% endif %}
     dm: $('#view-dec').html(),
     pp: $('#pred-pen-inp').val(),
     sp: $('#succ-pen-inp').val()
@@ -769,10 +880,17 @@ function saveDecision(hex) {
       } else {
         $('#edit-penalty').hide();
         $('#dec-rat').rating('enable');
+        let dr = $('#dec-rat').rating('get rating');
+        $('#dec-rat').rating('disable');
+        {% if referee_case.scoring_system == 2 %}
+          $('#dec-prior-rat').rating('enable');
+          let dpr = $('#dec-prior-rat').rating('get rating');
+          $('#dec-prior-rat').rating('disable');
+        {% endif %}
         $('#view-penalty').html(json.pt);
         $('#view-penalty').show();
-        var wc = $('#view-dec').text().replace(/[\s]+/g, ' ').split(' ').length;
-        if (wc >= {{ appeal.min_words }} && $(parseInt($('#dec-rat-inp').val()) > 0)) {
+        let wc = $('#view-dec').text().replace(/[\s]+/g, ' ').split(' ').length;
+        if (wc >= {{ referee_case.min_words }} && dr > 0{% if referee_case.scoring_system == 2 %}&& dpr > 0{% endif %}) {
           $('#submit-dec-btn').removeClass('disabled');
         } else {
           $('#submit-dec-btn').addClass('disabled');
@@ -788,8 +906,17 @@ function editDecision() {
   $('#view-penalty').hide();
   $('#submit-dec-btn').hide();
   $('#dec-rat').rating('enable');
-  openQuill('{{ appeal.lang|phrase:'Motivation_instruction'|safe }}', 'dec');
+  {% if referee_case.scoring_system == 2 %}
+    $('#dec-prior-rat').rating('enable');
+  {% endif %}
+  openQuill('{{ referee_case.lang|phrase:'Motivation_instruction'|safe }}', 'dec');
   $('#edit-penalty').show();
+  var qe = document.getElementById('quill-editor');
+  qe.style['height'] = 'auto';
+  qe = qe.firstChild;
+  qe.style['resize'] = 'vertical';
+  qe.style['overflow-y'] = 'scroll';
+  qe.style['min-height'] = '5em';
 }
 
 {% endif %}
@@ -844,24 +971,24 @@ function toggleList(list) {
     </div>
   {% endif %}
 
-  {% if appeal %}
-    {# NOTE: since users can referee at most ONE appeal at a time, the appeal segment is unique; #}
+  {% if referee_case %}
+    {# NOTE: since users can referee at most ONE case at a time, the referee case segment is unique; #}
     {# hence, non part or task numbering of DIVs or buttons #}
     <h2 class="ui header">
       <img class="ui small image" src="{% static 'presto/images/referee.png' %}">
       <div class="content">
-        {{ appeal.lang|phrase:'Referee_task'|safe }} {{ appeal.estafette_title|safe }}
+        {{ referee_case.lang|phrase:'Referee_task'|safe }} {{ referee_case.estafette_title|safe }}
       </div>
     </h2>
-    <div class="ui segments" lang="{{ appeal.lang.code }}">
+    <div class="ui segments" lang="{{ referee_case.lang.code }}">
       <div class="ui segment">
         <div class="ui grid">
           <div class="fourteen wide column">
-            <p>{{ appeal.estafette_period|safe }}</p>
-            <div class="ui large {{ appeal.color }} ribbon label">
-                {{ appeal.lang|phrase:'Deadline_for_decision' }}:
+            <p>{{ referee_case.estafette_period|safe }}</p>
+            <div class="ui large {{ referee_case.ribbon_color }} ribbon label">
+                {{ referee_case.lang|phrase:'Deadline_for_decision' }}:
             </div>
-            <span style="font-weight: 600">{{ appeal.deadline }}</span>
+            <span style="font-weight: 600">{{ referee_case.deadline }}</span>
           </div>
           <div class="two wide column">
             <div id="info-btn-appeal" class="ui tiny right floated blue circular icon button"
@@ -872,68 +999,93 @@ function toggleList(list) {
         </div>
       </div>
       <div id="info-appeal" class="ui secondary segment" style="font-size: small; display: none">
-        {{ appeal.estafette_desc|safe }}
+        {{ referee_case.estafette_desc|safe }}
       </div>
-      <div class="ui grey inverted segment">
+      <div class="ui {{ referee_case.color }} inverted segment">
         <h4 class="ui header">
           <i class="law icon"></i>
           <div class="content">
-            {{ appeal.lang|phrase:'Decide_on_this_appeal' }}
+            {{ referee_case.header_text }}
           </div>
         </h4>
       </div>
       <div class="ui segment">
         <div class="ui segments">
           <div class="ui secondary clearing segment">
-            {{ appeal.case_title }}
+            {{ referee_case.case_title }}
             <a class="ui mini circular icon button" onclick="toggleInfo('ap-case');">
               <i class="chevron down icon"></i>
             </a>
           </div>
-          {% if appeal.case_hex %}
+          {% if referee_case.case_hex %}
             <div id="ap-case-file" class="ui secondary segment" hidden="hidden">
-              {{ appeal.lang|phrase:'Case_has_attachment' }}
-              <a class="ui tiny black button" href="download/case/{{ appeal.case_hex }}"
+              {{ referee_case.lang|phrase:'Case_has_attachment' }}
+              <a class="ui tiny black button" href="download/case/{{ referee_case.case_hex }}"
                  style="margin-left: 2em">
                 <i class="download icon"></i>
-                {{ appeal.lang|phrase:'Download' }}
+                {{ referee_case.lang|phrase:'Download' }}
               </a>
             </div>
           {% endif %}
           <div id="info-ap-case" class="ui segment" hidden="hidden">
-            {{ appeal.case_desc|safe }}
+            {{ referee_case.case_desc|safe }}
           </div>
         </div>
         <div class="ui small header">
-          {{ appeal.step_title }}
+          {{ referee_case.step_title|safe }}
         </div>
-        {{ appeal.step_desc|safe }}
+        {{ referee_case.step_desc|safe }}
         <div class="ui small compact stackable menu">
           <div class="header item">
-            {{ appeal.lang|phrase:'Predecessor_work' }}:
+            {{ referee_case.lang|phrase:'Predecessor_work' }}:
           </div>
-          {% for f in appeal.pred_file_list %}
-            <a class="item" href="download/ref/{{ f.name }}/{{ appeal.pred_hex }}" target="_blank">
+          {% for f in referee_case.pred_file_list %}
+            <a class="item" href="download/ref/{{ f.name }}/{{ referee_case.pred_hex }}" target="_blank">
               {{ f.prompt }}
             </a>
           {% endfor %}
-          {% if appeal.pred_file_list|length > 1 %}
-            <a class="item" href="download/ref/all-zipped/{{ appeal.pred_hex }}" target="_blank">
+          {% if referee_case.pred_file_list|length > 1 %}
+            <a class="item" href="download/ref/all-zipped/{{ referee_case.pred_hex }}" target="_blank">
               <i class="file archive outline icon"></i>
-              {{ appeal.lang|phrase:'Download_all' }}
+              {{ referee_case.lang|phrase:'Download_all' }}
             </a>
           {% endif %}
         </div>
-        <div class="ui orange secondary segment">
-          <div class="ui small header">
-            <i class="empty star icon"></i>
-            <div class="content"{% if appeal.show_names %} data-tooltip="{{ appeal.reviewer }}"{% endif %}>
-              {{ appeal.lang|phrase:'Successor_review' }}
+        {% if referee_case.prior_rev_inst %}
+          <div class="ui olive secondary segment">
+            <div class="ui basic segment" style="margin: -1em">
+              <span style="font-weight: bold; margin-right: 1em">
+                {{ referee_case.lang|phrase:'Review_instructions_for_prior_steps' }}
+              </span>
+              <a id="show-prior-rev-instr-btn"
+                 class="ui tiny olive icon button"
+                 onclick="showPriorReviewInstructions();">
+                {{ referee_case.lang|phrase:'Show' }}
+                <i class="unhide icon"></i>
+              </a>
+              <a id="hide-prior-rev-instr-btn"
+                 class="ui tiny basic olive icon button"
+                 style="display: none"
+                 onclick="hidePriorReviewInstructions();">
+                {{ referee_case.lang|phrase:'Hide' }}
+                <i class="hide icon"></i>
+              </a>
+            </div>
+            <div id="prior-rev-instr" class="ui segment" style="display: none">
+              {{ referee_case.prior_rev_inst|safe }}
             </div>
           </div>
-          {% if appeal.rev_items|length > 0 %}
-            <p><strong><em>{{ appeal.lang|phrase:'Specific_review_items' }}</em></strong></p>
-            {% for ri in appeal.rev_items %}
+        {% endif %}
+        <div class="ui orange secondary segment">
+          <div class="ui small header">
+            <i class="star outline icon"></i>
+            <div class="content"{% if referee_case.show_names %} data-tooltip="{{ referee_case.reviewer }}"{% endif %}>
+              {{ referee_case.lang|phrase:'Successor_review' }}
+            </div>
+          </div>
+          {% if referee_case.rev_items|length > 0 %}
+            <p><strong><em>{{ referee_case.lang|phrase:'Specific_review_items' }}</em></strong></p>
+            {% for ri in referee_case.rev_items %}
               <div>
                 <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
                 
@@ -946,19 +1098,19 @@ function toggleList(list) {
               </div>
               {{ ri.comment|safe }}
             {% endfor %}
-            <p><strong><em>{{ appeal.lang|phrase:'Overall_review' }}</em></strong></p>
+            <p><strong><em>{{ referee_case.lang|phrase:'Overall_review' }}</em></strong></p>
           {% endif %}
-          {{ appeal.review.grade_motivation|safe }}
-          <label><strong>{{ appeal.lang|phrase:'Review_rating' }}:</strong></label>
-          <div id="appeal-rev-rat" class="ui star rating"
-               data-rating="{{ appeal.review.grade }}" data-max-rating="5">
+          {{ referee_case.review.grade_motivation|safe }}
+          <label><strong>{{ referee_case.lang|phrase:'Review_rating' }}:</strong></label>
+          <div id="appeal-rev-rat" class="ui yellow star rating"
+               data-rating="{{ referee_case.review.grade }}" data-max-rating="5">
           </div>
-          {% if appeal.review.is_rejection %}
+          {% if referee_case.review.is_rejection %}
             <div class="ui raised segment">
               <div class="ui small header">
                 <i class="thumbs down icon"></i>
                 <div class="content">
-                  {{ appeal.lang|phrase:'Successor_rejected' }}
+                  {{ referee_case.lang|phrase:'Successor_rejected' }}
                 </div>
               </div>
             </div>
@@ -966,93 +1118,148 @@ function toggleList(list) {
         </div>
         <div class="ui violet secondary segment">
           <div class="ui small header">
-            <i class="pointing up icon"></i>
-            <div class="content"{% if appeal.show_names %} data-tooltip="{{ appeal.author }}"{% endif %}>
-              {{ appeal.lang|phrase:'Predecessor_appealed_on' }} {{ appeal.time_appealed }}
+            <i class="pointing up outline icon"></i>
+            <div class="content"{% if referee_case.show_names %} data-tooltip="{{ referee_case.author }}"{% endif %}>
+              {{ referee_case.lang|phrase:'Predecessor_appealed_on' }} {{ referee_case.time_appealed }}
             </div>
           </div>
-          {{ appeal.review.appraisal_comment|safe }}
-          {% if appeal.review.improvement_appraisal %}
+          {{ referee_case.review.appraisal_comment|safe }}
+          {% if referee_case.review.improvement_appraisal %}
             <div class="ui small header">
-              {{ appeal.imp_opinion|safe }}
+              {{ referee_case.imp_opinion|safe }}
             </div>
-            {{ appeal.review.improvement_appraisal_comment|safe }}
-          {% elif not appeal.is_rejection %}
+            {{ referee_case.review.improvement_appraisal_comment|safe }}
+          {% elif not referee_case.is_rejection %}
             <p>
-              {{ appeal.lang|phrase:'No_pred_comment' }}
+              {{ referee_case.lang|phrase:'No_pred_comment' }}
             </p>
           {% endif %}
         </div>
+        {% if referee_case.ob %}
+          <div class="ui yellow secondary segment">
+            <div class="ui small header">
+              <i class="law icon"></i>
+              <div class="content"{% if referee_case.show_names %} data-tooltip="{{ referee_case.referee }}"{% endif %}>
+                {{ referee_case.lang|phrase:'Appeal_decided_on' }} {{ referee_case.time_decided }}
+              </div>
+            </div>
+            {{ referee_case.ap.grade_motivation|safe }}
+            {% if referee_case.ap_prior_grade %}
+              <label><strong>{{ referee_case.lang|phrase:'Review_prior_rating' }}:</strong></label>
+              <div id="appeal-dec-prior-rat" class="ui orange star rating"
+                   data-rating="{{ referee_case.ap_prior_grade }}" data-max-rating="5">
+              </div><br>
+            {% endif %}
+            <label><strong>{{ referee_case.lang|phrase:'Review_rating' }}:</strong></label>
+            <div id="appeal-dec-rat" class="ui yellow star rating"
+                 data-rating="{{ referee_case.ap_grade }}" data-max-rating="5">
+            </div>
+            <div>{{ referee_case.penalties_as_text|safe }}</div>
+            {% if referee_case.time_pred_appr %}
+              <div class="ui {{ referee_case.pred_appr_color }} secondary segment">
+                <strong>{{ referee_case.lang|phrase:'Pred_dec_appraisal' }}</strong>:
+                <i class="{{ referee_case.pred_appr_icon }} icon"></i>
+                {% if referee_case.pred_objected %}
+                  <i class="pointing up outline icon"></i>
+                {% endif %}
+                &nbsp;&nbsp;<small><em>({{ referee_case.time_pred_appr }})</em></small>
+                {{ referee_case.pred_motiv|safe }}
+              </div>
+            {% endif %}
+            {% if referee_case.time_succ_appr %}
+              <div class="ui {{ referee_case.succ_appr_color }} secondary segment">
+                <strong>{{ referee_case.lang|phrase:'Succ_dec_appraisal' }}</strong>:
+                <i class="{{ referee_case.succ_appr_icon }} icon"></i>
+                {% if referee_case.succ_objected %}
+                  <i class="pointing up outline icon"></i>
+                {% endif %}
+                &nbsp;&nbsp;<small><em>({{ referee_case.time_succ_appr }})</em></small>
+                {{ referee_case.succ_motiv|safe }}
+              </div>
+            {% endif %}
+            
+          </div>
+        {% endif %}
       </div>
-      <div class="ui grey segment">
+      <div class="ui {{ referee_case.color }} segment">
         <div class="ui small header">
-          {{ appeal.lang|phrase:'Appeal_decision_task' }}
+          {{ referee_case.lang|phrase:'Appeal_decision_task' }}
         </div>
-        {{ appeal.lang|phrase:'Appeal_decision_rules'|safe }}
-        <form id="dec-form" class="ui form" method="post" action="student/decide/{{ appeal.hex }}"
+        {{ referee_case.lang|phrase:'Appeal_decision_rules'|safe }}
+        <form id="dec-form" class="ui form" method="post"
+              action="student/decide{% if referee_case.ob %}-objection{% endif %}/{{ referee_case.hex }}"
               style="margin-top: 1em">
           <div class="ui form" >
             <div class="field">
-              <label>{{ appeal.lang|phrase:'Your_consideration' }}</label>
+              <label>{{ referee_case.lang|phrase:'Your_consideration' }}</label>
               <div id="edit-dec">
               </div>
               <div id="save-msg-dec" style="display: none; color: rgb(220, 0, 0)">
-                &uarr; {{ appeal.lang|phrase:'Please_save_this' }} &uarr;
+                &uarr; {{ referee_case.lang|phrase:'Please_save_this' }} &uarr;
               </div>
-              <div id="view-dec" class="ui grey secondary segment">
-                {{ appeal.object.grade_motivation|safe }}
+              <div id="view-dec" class="ui {{ referee_case.color }} secondary segment">
+                {{ referee_case.object.grade_motivation|safe }}
               </div>
               <div class="ui basic clearing segment" style="margin: -1em -1em">
-                <div id="words-dec" class="ui{% if appeal.words >= appeal.min_words %} basic{% endif %} black horizontal label">
-                  {{ appeal.words }}
+                <div id="words-dec" class="ui{% if referee_case.words >= referee_case.min_words %} basic{% endif %} black horizontal label">
+                  {{ referee_case.words }}
                 </div>
                 &larr;
                 <em>
-                  {{ appeal.lang|phrase:'Wordcount_left' }}
+                  {{ referee_case.lang|phrase:'Wordcount_left' }}
                   <span id="min-words-dec">
-                    {{ appeal.min_words }}
+                    {{ referee_case.min_words }}
                   </span>
-                  {{ appeal.lang|phrase:'Wordcount_right' }}
+                  {{ referee_case.lang|phrase:'Wordcount_right' }}
                 </em>
               </div>
+              {% if referee_case.scoring_system == 2 %}
+                <div class="ui basic clearing segment" style="margin: -1em">
+                  <label><strong>{{ referee_case.lang|phrase:'Your_rating_of_pred_prior_work' }}:</strong></label>
+                  <div id="dec-prior-rat" class="ui orange star rating"
+                       data-rating="{{ referee_case.prior_grade }}"
+                       data-max-rating="5"></div>
+                </div>
+              {% endif %}
               <div class="ui basic clearing segment" style="margin: -1em">
-                <label><strong>{{ appeal.lang|phrase:'Your_rating_of_pred_work' }}:</strong></label>
-                <div id="dec-rat" class="ui star rating"
-                     data-rating="{{ appeal.object.grade }}" data-max-rating="5"></div>
+                <label><strong>{{ referee_case.lang|phrase:'Your_rating_of_pred_work' }}:</strong></label>
+                <div id="dec-rat" class="ui yellow star rating"
+                     data-rating="{{ referee_case.grade }}"
+                     data-max-rating="5"></div>
               </div> 
             </div>
             <div id="edit-penalty">
               <div class="inline fields">
                 <div class="eight wide field">
-                  <label>{{ appeal.lang|phrase:'Predecessor_penalty'|safe }}</label>
+                  <label>{{ referee_case.lang|phrase:'Predecessor_penalty'|safe }}</label>
                   <input id="pred-pen-inp" name="pred-pen" style="width:4em"
-                         value="{{ appeal.object.predecessor_penalty }}" type="text">
+                         value="{{ referee_case.object.predecessor_penalty }}" type="text">
                 </div>
                 <div class="eight wide field">
-                  <label>{{ appeal.lang|phrase:'Successor_penalty'|safe }}</label>
+                  <label>{{ referee_case.lang|phrase:'Successor_penalty'|safe }}</label>
                   <input id="succ-pen-inp" name="succ-pen" style="width:4em"
-                         value="{{ appeal.object.successor_penalty }}" type="text">
+                         value="{{ referee_case.object.successor_penalty }}" type="text">
                 </div>
               </div>
-              <p style="margin-bottom: 0.5em"><em>{{ appeal.lang|phrase:'Half_point_scale' }}</em></p>
+              <p style="margin-bottom: 0.5em"><em>{{ referee_case.lang|phrase:'Half_point_scale' }}</em></p>
             </div>
             <div id="view-penalty" style="margin-bottom: 0.5em">
-              {{ appeal.penalties_as_text|safe }}
+              {% if ob %}{{ referee_case.new_penalties_as_text|safe }}{% else %}{{ referee_case.penalties_as_text|safe }}{% endif %}
             </div>
             <div class="ui basic clearing segment" style="margin: -1em">
-              <div id="save-btn-dec" class="ui left floated grey basic labeled icon button"
-                   onclick="saveDecision('{{ appeal.hex }}');">
+              <div id="save-btn-dec" class="ui left floated {{ referee_case.color }} basic labeled icon button"
+                   onclick="saveDecision('{{ referee_case.hex }}');">
                 <i class="check square icon"></i>
-                {{ appeal.lang|phrase:'Save_decision' }}
+                {{ referee_case.lang|phrase:'Save_decision' }}
               </div>
-              <div id="edit-btn-dec" class="ui left floated grey basic labeled icon button"
+              <div id="edit-btn-dec" class="ui left floated {{ referee_case.color }} basic labeled icon button"
                    onclick="editDecision();">
                 <i class="edit icon"></i>
-                {{ appeal.lang|phrase:'Edit_decision' }}
+                {{ referee_case.lang|phrase:'Edit_decision' }}
               </div>
-              <button id="submit-dec-btn" type="submit" class="ui disabled grey labeled icon button">
+              <button id="submit-dec-btn" type="submit" class="ui disabled {{ referee_case.color }} labeled icon button">
                 <i class="law icon"></i>
-                {{ appeal.lang|phrase:'Pronounce_decision' }}
+                {{ referee_case.lang|phrase:'Pronounce_decision' }}
               </button>
             </div>
           </div>
@@ -1071,31 +1278,94 @@ function toggleList(list) {
 
   {% endif %}
 
-  {# display list of appeals (if any) that user may referee #}
-  {% if ce_appeals or ce_decisions %}
+  {# display list of objections (if any) that user may decide on #}
+  {% if ce_objections %}
     <h2 class="ui header">
-      <img class="ui small image" src="{% static 'presto/images/referee.png' %}">
+      <i class="student icon"></i>
       <div class="content">
         {% if languages|length > 1 %}
-          {% if ce_appeals %}
-            You are invited to act as referee
-          {% else %}
-            You are qualified to act as referee
-          {% endif %}
+          You may decide on objections
         {% else %}
-          {% if ce_appeals %}
-            {{ languages.0|phrase:'Invite_to_referee' }}
-          {% else %}
-            {{ languages.0|phrase:'Qualified_to_referee' }}
-          {% endif %}
+          {{ languages.0|phrase:'You_may_decide' }}
         {% endif %}
       </div>
     </h2>
     <div class="ui segments">
-    {% if ce_appeals %}
+      <div class="ui grey inverted segment">
+        <h3 class="ui header">
+          <i class="law icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              Objections that are still unassigned
+            {% else %}
+              {{ languages.0|phrase:'Unassigned_objections' }}
+            {% endif %} (N = {{ total_obs }})
+          </div>
+        </h3>
+      </div>
+      <div class="ui basic segment">
+       {% for ce in ce_objections %}
+        <h4 class="ui header">
+          <i class="checkered flag icon"></i>
+          <div class="content" style="width: 100%">
+            {{ ce.estafette_title|safe }}
+            <span style="margin-left: 1em; font-weight: 500">(N = {{ ce.objections|length }})</span>
+            <div class="ui mini black right floated horizontal button"
+                 onclick="toggleList('objection-' + {{ ce.nr }});">
+              Show/hide list
+            </div>
+          </div>
+          <div class="sub header">
+            <em>{{ ce.next_deadline.label }}:</em> {{ ce.next_deadline.time }}
+          </div>
+        </h4>
+        <div id="objection-{{ ce.nr }}-list" class="ui fluid vertical menu">
+          {% for o in ce.objections %}
+            {% with ra=o.review.assignment %}
+              <a class="item"
+                 onclick="agreeToDecide('{{ ce.lang.code }}', '{{ o.hex }}', '{{ ra.leg.number }}', '{{ ra.case.letter }}');">
+                <div class="ui small yellow label"{% if o.show_names %} data-tooltip="{{ o.author_name }} versus {{ o.referee_name }}" data-position="top right"{% endif %}>
+                  {{ o.time }}
+                </div>
+                <span class="a-code">{{ o.code }}</span>
+                {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
+              </a>
+            {% endwith%}
+          {% endfor %}
+        </div>
+       {% endfor %}
+      </div>
+      <div class="ui grey inverted segment">
+        <h5 class="ui header">
+          <i class="warning sign icon"></i>
+          <div class="content">
+            {% if languages|length > 1 %}
+              <strong>NOTE:</strong> You should only commit to deciding on an objection if you can do this within 24 hours!
+            {% else %}
+              {{ languages.0|phrase:'Objection_list_caution'|safe }}
+            {% endif %}
+          </div>
+        </h5>
+      </div>
+    </div>
+  {% endif %}
+  
+  {# display list of appeals (if any) that user may referee #}
+  {% if ce_appeals %}
+    <h2 class="ui header">
+      <img class="ui small image" src="{% static 'presto/images/referee.png' %}">
+      <div class="content">
+        {% if languages|length > 1 %}
+          You are invited to act as referee
+        {% else %}
+          {{ languages.0|phrase:'Invite_to_referee' }}
+        {% endif %}
+      </div>
+    </h2>
+    <div class="ui segments">
       <div class="ui yellow inverted segment">
         <h3 class="ui header">
-          <i class="pointing up icon"></i>
+          <i class="pointing up outline icon"></i>
           <div class="content">
             {% if languages|length > 1 %}
               Appeals that are still unassigned
@@ -1129,7 +1399,15 @@ function toggleList(list) {
                 <div class="ui small {{ a.color }} label"{% if a.show_names %} data-tooltip="{{ a.author_name }}" data-position="top right"{% endif %}>
                   {{ a.time }}
                 </div>
-                <span class="a-code"{% if a.low_prio %} style="background-color: Silver"{% endif %}>{{ a.code }}</span>
+                <span class="a-code"
+                  {% if a.review.is_rejection %}
+                    style="background-color: Black"
+                  {% elif a.review.grade == 1 %}
+                    style="background-color: Red"
+                  {% elif a.low_prio %}
+                    style="background-color: Silver"
+                  {% endif %}
+                >{{ a.code }}{% if a.review.grade == 1 %}&starf;{% endif %}</span>
                 {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
               </a>
             {% endwith%}
@@ -1149,53 +1427,6 @@ function toggleList(list) {
           </div>
         </h5>
       </div>
-    {% endif %}
-    {% if ce_decisions %}
-      <div class="ui grey inverted segment">
-        <h3 class="ui header">
-          <i class="law icon"></i>
-          <div class="content">
-            {% if languages|length > 1 %}
-              Appeals that you have decided on
-            {% else %}
-              {{ languages.0|phrase:'Decided_appeals' }}
-            {% endif %} (N = {{ total_decisions }})
-          </div>
-        </h3>
-      </div>
-      <div class="ui basic segment">
-       {% for ce in ce_decisions %}
-        <h4 class="ui header">
-          <i class="checkered flag icon"></i>
-          <div class="content" style="width: 100%">
-            {{ ce.estafette_title|safe }}
-            <span style="margin-left: 1em; font-weight: 500">(N = {{ ce.appeals|length }})</span>
-            <div class="ui mini black right floated horizontal button"
-                 onclick="toggleList('decision-' + {{ ce.nr }});">
-              Show/hide list
-            </div>
-          </div>
-          <div class="sub header">
-            <em>{{ ce.next_deadline.label }}:</em> {{ ce.next_deadline.time }}
-          </div>
-        </h4>
-        <div id="decision-{{ ce.nr }}-list" class="ui fluid vertical menu">
-          {% for a in ce.appeals %}
-            {% with ra=a.appeal.review.assignment %}
-              <a class="item"
-                 onclick="showDecisionModal('{{ ce.lang.code }}', '{{ a.hex }}');">
-                <div class="ui small {{ a.color }} label"{% if a.show_names %} data-tooltip="{{ a.author_name }} versus {{ a.reviewer_name }}" data-position="top right"{% endif %}>
-                  {{ a.time }}
-                </div>
-                <span class="a-code" style="background-color: Silver">{{ a.code }}</span>
-                {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
-              </a>
-            {% endwith%}
-          {% endfor %}
-        </div>
-       {% endfor %}
-      </div>
-    {% endif %}
     </div>
   {% endif %}
   
@@ -1307,6 +1538,12 @@ function toggleList(list) {
             {% endif %}
           </span>
         {% endif %}
+        {% if p.is_referee %}
+          <div class="ui circular yellow icon button" data-tooltip="{{ p.is_referee }}"
+                  style="margin-left: 1em; color: black">
+            <i class="law icon" style="margin-left: -2px !important"></i>
+          </div>
+        {% endif %}
       </div>
     </h2>
 
@@ -1391,6 +1628,12 @@ function toggleList(list) {
       </div>
     {% endif %}
 
+            {% if p.team %}
+            <div class="ui large black basic ribbon label">
+              <i class="users icon"></i>
+              <em>Team:</em> {{ p.team|safe }}
+            </div>
+            {% endif %}
           </div> {# end of eleven wide column DIV #}
           <div class="one wide column">
             <div id="info-btn-{{ p.nr }}" class="ui tiny right floated blue circular icon button"
@@ -1447,7 +1690,7 @@ function toggleList(list) {
       {% elif p.no_final_reviews %}
         <div class="ui orange inverted segment">
           <div class="ui header">
-            <i class="wait icon"></i>
+            <i class="clock outline icon"></i>
             <div class="content">
               {{ p.no_final_reviews }}
             </div>
@@ -1457,9 +1700,13 @@ function toggleList(list) {
           <div class="ui small header">
             {{ p.final_reviews_to_do|safe }}
           </div>
-          <p>{{ p.lang|phrase:'Frontrunner' }}</p>
-          <p>{{ p.lang|phrase:'Please_wait' }}</p>
-          <p>{{ p.lang|phrase:'Keep_logging_on'|safe }}</p>
+          {% if p.explain_final_reviews %}
+            <p>{{ p.explain_final_reviews|safe }}</p>
+          {% else %}
+            <p>{{ p.lang|phrase:'Frontrunner' }}</p>
+            <p>{{ p.lang|phrase:'Please_wait' }}</p>
+            <p>{{ p.lang|phrase:'Keep_logging_on'|safe }}</p>
+          {% endif %}
         </div>
       {% else %}
         {% if p.Finished %}
@@ -1607,7 +1854,7 @@ function toggleList(list) {
                 {% endif %}
                 {{ t.appraised_review.grade_motivation|safe }}
                 <label><strong>{{ p.lang|phrase:'Your_rating' }}:</strong></label>
-                <div id="app-rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
+                <div id="app-rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui yellow star rating"
                      data-rating="{{ t.appraised_review.grade }}" data-max-rating="5">
                 </div>
                 {% if t.appraised_review.is_rejection %}
@@ -1632,7 +1879,7 @@ function toggleList(list) {
                 {% if t.appraised_review.is_appeal %}
                   <div class="ui raised segment">
                     <div class="ui small header">
-                      <i class="pointing up icon"></i>
+                      <i class="pointing up outline icon"></i>
                       <div class="content">
                         {{ p.lang|phrase:'Predecessor_appealed' }}
                       </div>
@@ -1744,6 +1991,15 @@ function toggleList(list) {
             <div class="ui small header">
               {{ p.lang|phrase:'Submit_work' }}
             </div>
+
+          {% if p.suspended %}
+            <div class="ui small header">
+              {{ p.lang|phrase:'Relay_suspended' }}
+            </div>
+            <p>
+              {{ p.lang|phrase:'No_uploads_or_reviews' }}
+            </p>
+          {% else %}
             {{ t.instr|safe }}
             {% for ui in t.upl_items %}
             <div class="ui {{ t.color }} segment">
@@ -1838,22 +2094,49 @@ function toggleList(list) {
                   </button>
                   <div id="wait-{{ p.nr }}" data-nr="{{ p.nr }}"
                        class="ui right floated black basic labeled icon button"
-                       style="display: none">
-                    <i class="time icon"></i>
+                       {% if t.min_to_wait <= 0 %}style="display: none"{% endif %}>
+                    <i class="clock outline icon"></i>
                     <span id="minutes-{{ p.nr }}" class="upload-timer">{{ t.min_to_wait }}</span>
                     {{ p.lang|phrase:'Minutes_to_submit' }}
                   </div>
                 </div>
               </div>
             </form>
+          {% endif %}
+
           </div>
+          {% if p.q_header %}
+            <div class="ui tertiary {{ t.color }} segment">
+              <div class="ui grid">
+                <div class="six wide column">
+                  <a class="ui blue labeled icon button"
+                     onclick="showQuestionModal(percQuotes('{{ p.q_header|safe }}'),
+                       percQuotes('{{ p.q_prompt|safe }}'),
+                       '{{ p.q_submit }}',
+                       '{{ p.q_cancel }}',
+                       '{{ p.hex }}', '{{ t.case_letter }}');">
+                    <i class="mail outline icon"></i>
+                    {{ p.lang|phrase:'Pose_question' }}
+                  </a>
+                </div>
+                <div class="ten wide column" style="padding-top: 1.5rem">
+                  <div class="ui small header">
+                    <i class="pointing left icon"></i>
+                    <div class="content">
+                      {{ p.lang|phrase:'Can_pose_question' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endif %}
           {% if t.can_revise %}
             <div class="ui tertiary orange segment">
               <div class="ui grid">
                 <div class="six wide column">
                   <form action="student/modify/{{ t.hex }}">
                     <button class="ui orange labeled icon button" type="submit">
-                      <i class="empty star icon"></i>
+                      <i class="star outline icon"></i>
                       {{ p.lang|phrase:'Modify_review' }}
                     </button>
                   </form>
@@ -1986,7 +2269,7 @@ function toggleList(list) {
                     </div>
                     <div class="sixteen wide column">
                       <label><strong>{{ p.lang|phrase:'Your_rating' }}:</strong></label>
-                      <div id="rev-rat-{{ p.nr }}" class="ui star rating" style="margin-right: 2em"
+                      <div id="rev-rat-{{ p.nr }}" class="ui yellow star rating" style="margin-right: 2em"
                            data-rating="{{ t.grade }}" data-max-rating="5">
                       </div>
                       <input id="rev-rat-inp-{{ p.nr }}" name="rat" type="hidden" value="{{ t.grade }}">
@@ -2021,7 +2304,7 @@ function toggleList(list) {
                   <div id="wait-{{ p.nr }}" data-nr="{{ p.nr }}" data-hex="{{ t.rev_hex }}"
                        class="ui right floated black basic labeled icon button"
                        style="display: none">
-                    <i class="time icon"></i>
+                    <i class="clock outline icon"></i>
                     <span id="minutes-{{ p.nr }}" class="review-timer">0</span>
                     {{ p.lang|phrase:'Minutes_to_submit' }}
                   </div>
@@ -2043,6 +2326,31 @@ function toggleList(list) {
               </div>
             </form>
           </div>
+          {% if p.q_header %}
+            <div class="ui tertiary blue segment">
+              <div class="ui grid">
+                <div class="six wide column">
+                  <a class="ui blue labeled icon button"
+                     onclick="showQuestionModal(percQuotes('{{ p.q_header|safe }}'),
+                       percQuotes('{{ p.q_prompt|safe }}'),
+                       '{{ p.q_submit }}',
+                       '{{ p.q_cancel }}',
+                       '{{ p.hex }}', '{{ t.case_letter }}');">
+                    <i class="mail outline icon"></i>
+                    {{ p.lang|phrase:'Pose_question' }}
+                  </a>
+                </div>
+                <div class="ten wide column" style="padding-top: 1.5rem">
+                  <div class="ui small header">
+                    <i class="pointing left icon"></i>
+                    <div class="content">
+                      {{ p.lang|phrase:'Can_pose_question' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endif %}
         {% elif t.type == 'PROCEED' %}
           <div class="ui tertiary clearing segment">
             {% if t.too_late %}
@@ -2053,8 +2361,8 @@ function toggleList(list) {
                 <i class="{{ t.icon }} icon"></i>
                 {{ t.task }}
               </a>
+              <span>{{ p.lang|phrase:'Only_when_you_can'|safe }}</span>
             {% endif %}
-            <span>{{ p.lang|phrase:'Only_when_you_can'|safe }}</span>
           </div>
         {% elif t.type == 'APPR-REV' %}
           <div class="ui {{ t.color }} segment">
@@ -2098,7 +2406,7 @@ function toggleList(list) {
               {% endif %}
               {{ t.peer_review.grade_motivation|safe }}
               <label><strong>{{ p.lang|phrase:'Successor_rating' }}:</strong></label>
-              <div id="rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
+              <div id="rev-rat-{{ p.nr }}-{{ t.nr }}" class="ui yellow star rating"
                    data-rating="{{ t.peer_review.grade }}" data-max-rating="5"></div>
             </div>
             {% if t.peer_review.is_rejection %}
@@ -2157,7 +2465,7 @@ function toggleList(list) {
                       {% endif %}
                     </div>
                     <div class="ui small header">
-                      <i class="talk icon"></i>
+                      <i class="comment dots outline icon"></i>
                       {{ p.lang|phrase:'Your_opinion' }}
                     </div>
                     <div id="edit-btn-imp-{{ p.nr }}-{{ t.nr }}"
@@ -2255,15 +2563,15 @@ function toggleList(list) {
                          style="margin-right: 2em; pointer-events: none">
                       <div id="ap1-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
                            onclick="appraise('{{ p.nr }}-{{ t.nr }}', 1);">
-                        <i class="smile icon"></i>
+                        <i class="smile outline icon"></i>
                       </div>
                       <div id="ap2-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
                            onclick="appraise('{{ p.nr }}-{{ t.nr }}', 2);">
-                       <i class="meh icon"></i>
+                       <i class="meh outline icon"></i>
                       </div>
                       <div id="ap3-{{ p.nr }}-{{ t.nr }}" class="ui mini button"
                            onclick="appraise('{{ p.nr }}-{{ t.nr }}', 3);">
-                        <i class="frown icon"></i>
+                        <i class="frown outline icon"></i>
                       </div>
                     </div>
                     <input id="appr-inp-{{ p.nr }}-{{ t.nr }}" name="appr" type="hidden"
@@ -2290,7 +2598,7 @@ function toggleList(list) {
                   <button id="appeal-btn-{{ p.nr }}-{{ t.nr }}" type="button"
                           class="ui right floated disabled red labeled icon button"
                           onclick="confirmAppeal('{{ p.nr }}-{{ t.nr }}', '{{ p.lang.code }}');">
-                    <i class="pointing up icon"></i>
+                    <i class="pointing up outline icon"></i>
                     {{ p.lang|phrase:'Appeal' }}
                   </button>
                   <button id="submit-appr-btn-{{ p.nr }}-{{ t.nr }}"
@@ -2314,10 +2622,12 @@ function toggleList(list) {
                 <td><strong>{{ p.lang|phrase:'Appeal_assigned_on' }}:</strong></td>
                 <td>{{ t.time_assigned }}</td>
               </tr>
+              {% if t.time_viewed %}
               <tr>
                 <td><strong>{{ p.lang|phrase:'Appeal_first_viewed_on' }}:</strong></td>
                 <td>{{ t.time_viewed }}</td>
               </tr>
+              {% endif %}
               <tr>
                 <td><strong>{{ p.lang|phrase:'Appeal_decided_on' }}:</strong></td>
                 <td>{{ t.time_decided }}</td>
@@ -2328,9 +2638,14 @@ function toggleList(list) {
                 {{ p.lang|phrase:'Referee_motivation' }}
               </div>
               {{ t.decided_appeal.grade_motivation|safe }}
+              {% if t.scoring_system == 2 and t.prior_grade %}
+                <label><strong>{{ p.lang|phrase:'Referee_prior_rating' }}:</strong></label>
+                <div id="ref-prior-rat-{{ p.nr }}-{{ t.nr }}" class="ui orange star rating"
+                     data-rating="{{ t.prior_grade }}" data-max-rating="5"></div>
+              {% endif %}
               <label><strong>{{ p.lang|phrase:'Referee_rating' }}:</strong></label>
-              <div id="ref-rat-{{ p.nr }}-{{ t.nr }}" class="ui star rating"
-                   data-rating="{{ t.decided_appeal.grade }}" data-max-rating="5"></div>
+              <div id="ref-rat-{{ p.nr }}-{{ t.nr }}" class="ui yellow star rating"
+                   data-rating="{{ t.grade }}" data-max-rating="5"></div>
               <p style="margin-top: 0.5em">{{ t.penalty_text|safe }}</p>
               <p>{{ t.possibility_to_object }}</p>
             </div>
@@ -2356,6 +2671,15 @@ function toggleList(list) {
                     {{ t.appr_motiv|safe }}
                   </div>
                 </div>
+
+                <div class="ui basic clearing segment" style="margin: -1em -1em">
+                  <div id="words-appr-{{ p.nr }}-{{ t.nr }}"
+                       class="ui basic {{ t.color }} horizontal label">
+                    {{ t.appr_words }}
+                  </div>
+                  &larr; <em>{{ p.lang|phrase:'Word_count_for_objection' }}</em>
+                </div>
+
                 <div class="ui basic clearing segment" style="margin: -1em">
                   <div id="save-btn-appr-{{ p.nr }}-{{ t.nr }}"
                        class="ui right floated {{ t.color }} mini labeled icon button"
@@ -2372,18 +2696,19 @@ function toggleList(list) {
                   <label>
                     <strong>{{ p.lang|phrase:'Your_dec_appraisal' }}:</strong>&nbsp;&nbsp;
                   </label>
-                  <div class="ui mini icon buttons" style="margin-right: 2em">
+                  <div id="appr-btns-{{ p.nr }}-{{ t.nr }}" class="ui mini icon buttons"
+                       style="margin-right: 2em; pointer-events: none">
                     <div id="ap1-{{ p.nr }}-{{ t.nr }}" class="ui button"
                          onclick="appraise('{{ p.nr }}-{{ t.nr }}', 1);">
-                      <i class="smile icon"></i>
+                      <i class="smile outline icon"></i>
                     </div>
                     <div id="ap2-{{ p.nr }}-{{ t.nr }}" class="ui button"
                          onclick="appraise('{{ p.nr }}-{{ t.nr }}', 2);">
-                      <i class="meh icon"></i>
+                      <i class="meh outline icon"></i>
                     </div>
                     <div id="ap3-{{ p.nr }}-{{ t.nr }}" class="ui button"
                          onclick="appraise('{{ p.nr }}-{{ t.nr }}', 3);">
-                      <i class="frown icon"></i>
+                      <i class="frown outline icon"></i>
                     </div>
                   </div>
                   <div id="appeal-text-{{ p.nr }}-{{ t.nr }}"
@@ -2398,7 +2723,7 @@ function toggleList(list) {
                     <button id="appeal-btn-{{ p.nr }}-{{ t.nr }}" type="button"
                             class="ui right floated red labeled icon button"
                             onclick="confirmObjection('{{ p.nr }}-{{ t.nr }}', '{{ p.lang.code }}');">
-                      <i class="pointing up icon"></i>
+                      <i class="pointing up outline icon"></i>
                       {{ p.lang|phrase:'Object' }}
                     </button>
                   {% endif %}
@@ -2476,6 +2801,44 @@ function toggleList(list) {
   </div>
 </div>
 
+<div id="question-modal" class="ui small modal">
+  <div id="question-header" class="header"></div>
+  <div class="content">
+    <div style="display: none">
+      <span id="question-hex"></span>
+      <span id="question-case"></span>
+    </div>
+    <div id="question-prompt" style="margin-bottom: 1em"></div>
+    <div id="question-quill-container">
+      <div id="question-quill-editor" style="height: 10em"></div>
+    </div>
+  </div>
+  <div class="ui basic clearing segment" style="padding-right: 1.5em; margin-top: -1.5em">
+    <div class="ui right floated right labeled icon button" onclick="$('#question-modal').modal('hide');">
+      <i class="cancel icon"></i>
+      <span id="question-cancel">Cancel</span>
+    </div>
+    <div class="ui right floated blue right labeled icon button" onclick="submitQuestion();">
+      <i class="mail outline icon"></i>
+      <span id="question-submit">Submit</span>
+    </div>
+  </div>
+</div>
+
+<div id="question-submitted-modal" class="ui tiny modal">
+  <div id="qs-header" class="header"></div>
+  <div class="content">
+    <div id="qs-question" class="ui secondary segment" style="font-size: small !important"></div>
+    <div id="qs-message"></div>
+  </div>
+  <div class="ui basic clearing segment" style="padding-right: 1.5em; margin-top: -1.5em">
+    <div class="ui right floated blue right labeled icon button" onclick="$('#question-submitted-modal').modal('hide');">
+      <i class="check icon"></i>
+      OK
+    </div>
+  </div>
+</div>
+
 <div id="error-modal" class="ui small modal">
   <div class="header">
     Input not saved!
@@ -2497,8 +2860,7 @@ function toggleList(list) {
     </div>
   </div>
   <div class="ui basic clearing segment" style="padding-right: 1.5em; margin-top: -1.5em">
-    <div class="ui orange approve right floated labeled icon button"
-         onclick="$('#error-modal').hide();">
+    <div class="ui orange right floated labeled icon cancel button" onclick="$('#error-modal').modal('hide');">
       OK, I got it
       <i class="check icon"></i>
     </div>
@@ -2540,7 +2902,7 @@ function toggleList(list) {
     </div>
     <div class="ui red approve right labeled icon button">
       {{ l|phrase:'Appeal'  }}
-      <i class="pointing up icon"></i>
+      <i class="pointing up outline icon"></i>
     </div>
   </div>
 </div>
@@ -2559,7 +2921,7 @@ function toggleList(list) {
     </div>
     <div class="ui red approve right labeled icon button">
       {{ l|phrase:'Object'  }}
-      <i class="pointing up icon"></i>
+      <i class="pointing up outline icon"></i>
     </div>
   </div>
 </div>
@@ -2578,6 +2940,26 @@ function toggleList(list) {
       <i class="cancel icon"></i>
     </div>
     <div class="ui yellow approve right labeled icon button">
+      {{ l|phrase:'Confirm' }}
+      <i class="check icon"></i>
+    </div>
+  </div>
+</div>
+
+<div id="confirm-decide-{{ l.code }}" class="ui small modal" lang="{{ l.code }}">
+  <div class="header">
+    <div id="appeal-case-{{ l.code }}" class="ui huge yellow horizontal label">X0</div>
+    {{ l|phrase:'Confirm_referee' }}
+  </div>
+  <div class="content">
+    {{ l|phrase:'Referee_caution'|safe }}
+  </div>
+  <div class="actions">
+    <div class="ui cancel right labeled icon button">
+      {{ l|phrase:'Cancel' }}
+      <i class="cancel icon"></i>
+    </div>
+    <div class="ui grey approve right labeled icon button">
       {{ l|phrase:'Confirm' }}
       <i class="check icon"></i>
     </div>
@@ -2607,3 +2989,4 @@ function toggleList(list) {
 {% endfor %}
 
 {% endblock page_content %}
+

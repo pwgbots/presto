@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -77,7 +73,7 @@ def course(request, **kwargs):
         if not (c.manager == context['user'] or c.instructors.filter(id=context['user'].id)):
             log_message('ACCESS DENIED: Invalid course parameter', context['user'])
             return render(request, 'presto/forbidden.html', context)
-    except Exception, e:
+    except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
 
@@ -115,7 +111,7 @@ def course(request, **kwargs):
             )
             ce.save()
             log_message('Added new estafette to course', context['user'])
-        except Exception, e:
+        except Exception as e:
             report_error(context, e)
             return render(request, 'presto/error.html', context)
     

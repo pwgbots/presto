@@ -1,9 +1,9 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
-Copyright (c) 2019 Delft University of Technology
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -37,8 +33,15 @@ from .models import Estafette, EstafetteCase, Profile, Role, UserSession
 
 # presto modules
 from presto.generic import change_role, generic_context, report_error
-from presto.utils import (decode, encode, log_message, prefixed_user_name,
-    DATE_TIME_FORMAT, EDIT_STRING)
+from presto.utils import (
+    DATE_TIME_FORMAT,
+    decode,
+    encode,
+    EDIT_STRING,
+    log_message,
+    prefixed_user_name,
+    ui_img
+    )
 
 
 # view for estafette page (for instructors authoring an estafette)
@@ -58,7 +61,7 @@ def estafette_view(request, **kwargs):
             # remember the estafette that is being edited
             e = ec.estafette
             ec.delete()
-        except Exception, e:
+        except Exception as e:
             report_error(context, e)
             return render(request, 'presto/error.html', context)
     else:
@@ -66,7 +69,7 @@ def estafette_view(request, **kwargs):
         try:
             eid = decode(h, context['user_session'].decoder)
             e = Estafette.objects.get(pk=eid)
-        except Exception, e:
+        except Exception as e:
             report_error(context, e)
             return render(request, 'presto/error.html', context)
         # check whether a new case is to be added
@@ -78,7 +81,7 @@ def estafette_view(request, **kwargs):
                     break
             ec = EstafetteCase.objects.create(
                     estafette = e,
-                    name = 'New case (%s)' % l,
+                    name = 'New case ({})'.format(l),
                     letter = l,
                     creator = context['user'],
                     time_created = timezone.now(),
@@ -92,14 +95,19 @@ def estafette_view(request, **kwargs):
     for ec in ec_list:
         e_cases.append({
             'object': ec,
-            'edits': EDIT_STRING % (prefixed_user_name(ec.last_editor),
-                timezone.localtime(ec.time_last_edit).strftime(DATE_TIME_FORMAT)),
+            'desc': ui_img(ec.description),
+            'edits': EDIT_STRING.format(
+                name=prefixed_user_name(ec.last_editor),
+                time=timezone.localtime(ec.time_last_edit).strftime(DATE_TIME_FORMAT)
+                ),
             'hex': encode(ec.id, context['user_session'].encoder)
         })
     context['estafette'] = {
         'object': e,
-        'edits': EDIT_STRING % (prefixed_user_name(e.last_editor),
-            timezone.localtime(e.time_last_edit).strftime(DATE_TIME_FORMAT)),
+        'edits': EDIT_STRING.format(
+            name=prefixed_user_name(e.last_editor),
+            time=timezone.localtime(e.time_last_edit).strftime(DATE_TIME_FORMAT)
+            ) + '<span>&thinsp;XYZ</span>',
         'hex': encode(e.id, context['user_session'].encoder),
         'owner': prefixed_user_name(e.creator),
         'owned': e.creator == context['user'],

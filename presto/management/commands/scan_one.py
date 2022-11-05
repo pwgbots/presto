@@ -1,8 +1,8 @@
-# Software developed by Pieter W.G. Bots for the PrESTO project
-# Code repository: https://github.com/pwgbots/presto
-# Project wiki: http://presto.tudelft.nl/wiki
-
 """
+Software developed by Pieter W.G. Bots for the PrESTO project
+Code repository: https://github.com/pwgbots/presto
+Project wiki: http://presto.tudelft.nl/wiki
+
 Copyright (c) 2019 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -23,9 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-# Software developed for the PrESTO project -- see http://presto.tudelft.nl/wiki
-# Copyright (c) 2017-2018 by Pieter Bots. All rights reserved.
-
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 from django.conf import settings
@@ -34,9 +31,8 @@ from django.core.management.base import BaseCommand
 from presto.models import Assignment, DEFAULT_DATE
 from presto.plag_scan import scan_one_assignment
 
-# get one unscanned assignment and scan it (to be called by CRON job)
 class Command(BaseCommand):
+    """Get one unscanned assignment and scan it."""
 
     def handle(self, *args, **options):
         scan_one_assignment()
-

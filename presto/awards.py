@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -22,10 +22,6 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -141,11 +137,21 @@ def awards(request):
     l_dict = {}
     # first add participant LoA's
     # NOTE: keys prefixed by P to distinguish participant IDs from referee IDs
-    for l in LetterOfAcknowledgement.objects.filter(participant__student__user=context['user']):
-        l_dict['P%d' % l.participant.id] = {'object': l, 'hex': encode(l.id, context['user_session'].encoder)}
+    for l in LetterOfAcknowledgement.objects.filter(
+        participant__student__user=context['user']
+        ):
+        l_dict['P' + l.participant.id] = {
+            'object': l,
+            'hex': encode(l.id, context['user_session'].encoder)
+            }
     # NOTE: referee LoA's have their estafette ID as key
-    for l in LetterOfAcknowledgement.objects.filter(referee__user=context['user']):
-        l_dict[l.estafette.id] = {'object': l, 'hex': encode(l.id, context['user_session'].encoder)}
+    for l in LetterOfAcknowledgement.objects.filter(
+        referee__user=context['user']
+        ):
+        l_dict[l.estafette.id] = {
+            'object': l,
+            'hex': encode(l.id, context['user_session'].encoder)
+            }
 
     # get the user's referee object instances (created upon passing a referee exam)
     r_list = Referee.objects.filter(user=context['user'])
@@ -160,8 +166,8 @@ def awards(request):
         e = a.review.assignment.participant.estafette
         l = a.review.assignment.leg.number
         # update step count if estafette already has an entry ...
-        if re_dict.has_key(e.id):
-            if re_dict[e.id].has_key(l):
+        if e.id in re_dict:
+            if l in re_dict[e.id]:
                 re_dict[e.id][l] += 1
             else:
                 re_dict[e.id][l] = 1
@@ -169,8 +175,15 @@ def awards(request):
             re_dict[e.id]['last'] = max(re_dict[e.id]['last'], a.time_decided)
         # ... or create a new entry
         else:
-            re_dict[e.id] = {'ce': e, 'ref': a.referee,
-                'first': a.time_decided, 'last': a.time_decided, 'sum': 0, 'cnt': 0, l: 1}
+            re_dict[e.id] = {
+                'ce': e,
+                'ref': a.referee,
+                'first': a.time_decided,
+                'last': a.time_decided,
+                'sum': 0,
+                'cnt': 0,
+                l: 1
+                }
         # collect statistics on appraisal of the decisions (by default, assume neutral: 2)
         if a.predecessor_appraisal > 0:
             re_dict[e.id]['sum'] += a.predecessor_appraisal
@@ -189,25 +202,29 @@ def awards(request):
         acc = 0
         rs = []
         for i in range(1, ns + 1):
-            if re_dict[e].has_key(i):
+            if i in re_dict[e]:
                 rs.append(i)
                 acc += re_dict[e][i]
         # format this as a nice phrase, e.g. "steps 1, 2 and 4 (of 4)"
         if ns == 1:
             steps = 'the single step'
         elif len(rs) == 1:
-            steps = 'step %d (of %d)' % (rs[0], ns)
+            steps = 'step {} (of {})'.format(rs[0], ns)
         elif len(rs) == ns:
-            steps = 'all %d steps' % ns
+            steps = 'all {} steps'.format(ns)
         else:
-            steps = 'steps %s and %d (of %d)' % (', '.join([str(s) for s in rs[:-1]]), rs[-1], ns)
+            steps = 'steps {} and {} (of {})'.format(
+                ', '.join([str(s) for s in rs[:-1]]),
+                rs[-1],
+                ns
+                )
         # compute the average appreciation on a scale from -1 to 1
         appr = 0
-        print 'count=%d' % re_dict[e]['cnt']
-        print 'sum=%d' % re_dict[e]['sum']
+        # print('count=' + re_dict[e]['cnt'])
+        # print('sum=' + re_dict[e]['sum'])
         if re_dict[e]['cnt'] > 0:
             appr = re_dict[e]['sum'] / float(re_dict[e]['cnt']) - 2  # subtract 2 because frown = 1 and smile = 3
-        if l_dict.has_key(e):
+        if e in l_dict:
             # upgrade letter if needed
             changed = False
             l = l_dict[e]['object']
