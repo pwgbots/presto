@@ -96,7 +96,7 @@ class Command(BaseCommand):
                 if cr:
                     n += 1
             except Exception as e:
-                print ('Problem with video {}: {}'.format(unicode(v), str(e)))
+                print('Problem with video {}: {}'.format(str(v), str(e)))
         if n > 0:
             print('Added {} video clips'.format(n))
 

@@ -59,7 +59,6 @@ from .models import (
 # python modules
 from datetime import datetime, timedelta
 from docx import Document
-from itertools import chain
 from json import loads
 from openpyxl import load_workbook
 import os
@@ -161,7 +160,7 @@ def student(request, **kwargs):
                         course=c.title(),
                         time=lang.ftime(csl.first().time_enrolled)
                         ),
-                    'Tried to enroll again in course ' + unicode(c)
+                    'Tried to enroll again in course ' + str(c)
                     )
             else:
                 if csl:
@@ -187,7 +186,7 @@ def student(request, **kwargs):
                     context,
                     lang.phrase('Enrollment_succeeded'),
                     lang.phrase('You_have_enrolled').format(course=c.title()),
-                    'Enrolled in course ' + unicode(c)
+                    'Enrolled in course ' + str(c)
                     )
         # check whether focus is set on some "dummy" participant
         elif act == 'focus':
@@ -213,7 +212,7 @@ def student(request, **kwargs):
                         relay=ce.title(),
                         time=lang.ftime(p.time_registered)
                         ),
-                    'Tried to focus on non-dummy in ' + unicode(ce)
+                    'Tried to focus on non-dummy in ' + str(ce)
                     )
         # check whether focus on "dummy" participant should be removed
         elif act == 'defocus':
@@ -237,7 +236,7 @@ def student(request, **kwargs):
             p.time_last_action=timezone.now()
             p.save()
             ce = p.estafette
-            log_message('Starting with relay ' + unicode(ce), context['user'])
+            log_message('Starting with relay ' + str(ce), context['user'])
             lang = ce.course.language
             # do not let a student start again
             # NOTE: this should happpen only if user goes back in browser
@@ -249,7 +248,7 @@ def student(request, **kwargs):
                         relay=ce.title(),
                         time=lang.ftime(dts)
                         ),
-                    'Tried to start again with ' + unicode(ce))
+                    'Tried to start again with ' + str(ce))
             # double-check that "instructor participants" cannot start
             elif p.student.dummy_index < 0:
                 warn_user(
@@ -263,7 +262,7 @@ def student(request, **kwargs):
                     lang.phrase('Team_has_assignment'),
                     lang.phrase('Please_coordinate'),
                     'No new first step created for team participant '
-                        + unicode(p)
+                        + str(p)
                     )
             else:
                 # needs a first assignment, so get the "rarest" case
@@ -304,7 +303,7 @@ def student(request, **kwargs):
                         context,
                         lang.phrase('Started'),
                         lang.phrase('Godspeed'),
-                        'Started relay ' + unicode(p.estafette)
+                        'Started relay ' + str(p.estafette)
                         )
         elif act == 'upload':
             # verify that upload is for an assignment made by the participant
@@ -523,7 +522,7 @@ def student(request, **kwargs):
                             'Uploaded file "{n}" as {f} for relay {r}'.format(
                                 n=f.name,
                                 f=rf['name'],
-                                r=unicode(a.participant.estafette)
+                                r=str(a.participant.estafette)
                                 ),
                             context['user']
                             )
@@ -547,7 +546,7 @@ def student(request, **kwargs):
                             ):
                             log_message(
                                 'Predecessor is clone: '
-                                    + unicode(a.predecessor),
+                                    + str(a.predecessor),
                                 context['user']
                                 )
                             # remember that the uploader has reviewed this "clone"
@@ -595,12 +594,12 @@ def student(request, **kwargs):
                                 a.predecessor = original_pred
                                 log_message(
                                     'Original now linked to uploader: '
-                                        + unicode(original_pred),
+                                        + str(original_pred),
                                     context['user']
                                     )
                                 log_message(
                                     'Clone now linked to original successor: '
-                                        + unicode(clone_pred),
+                                        + str(clone_pred),
                                     context['user']
                                     )
                                 # (5) Swap the assignment IDs of the two peer
@@ -756,7 +755,7 @@ def student(request, **kwargs):
                     # NOTE: we exclude "clones" to prevent "cloning clones"
                     log_message(
                         'TRACE - eligible predecessors: '
-                            + ', '.join([unicode(a) for a in elig_set]),
+                            + ', '.join([str(a) for a in elig_set]),
                         context['user']
                         )
 
@@ -772,7 +771,7 @@ def student(request, **kwargs):
                     sub_set = pr_set.filter(successor__isnull=True).exclude(case__in=c_list)
                     log_message(
                         'TRACE - preferred predecessors: '
-                            + ', '.join([unicode(a) for a in sub_set]),
+                            + ', '.join([str(a) for a in sub_set]),
                         context['user']
                         )
                     # if both conditions can be met, the predecessor set can be limited
@@ -793,7 +792,7 @@ def student(request, **kwargs):
                             id__in=clone_set.values_list('clone_of', flat=True))
                         log_message(
                             'TRACE - still clonable predecessors with new case: '
-                                + ', '.join([unicode(a) for a in sub_set]),
+                                + ', '.join([str(a) for a in sub_set]),
                             context['user']
                             )
                         # if so, use this subset of assignments with "new" cases (and successor)
@@ -806,7 +805,7 @@ def student(request, **kwargs):
                             pr_set = elig_set.filter(successor__isnull=True)
                             log_message(
                                 'TRACE - eligible predecessors with known case: '
-                                    + ', '.join([unicode(a) for a in pr_set]),
+                                    + ', '.join([str(a) for a in pr_set]),
                                 context['user']
                                 )
                             if pr_set:
@@ -831,7 +830,7 @@ def student(request, **kwargs):
                     else:
                         log_message(
                             'TRACE - "best we can do" predecessors: '
-                                + ', '.join([unicode(a) for a in pr_set]),
+                                + ', '.join([str(a) for a in pr_set]),
                                 context['user']
                             )
                     
@@ -858,7 +857,7 @@ def student(request, **kwargs):
                         #       so that the "fast runners" are preferred over "slow runners"
                         log_message(
                             'TRACE - sorted retained predecessors: '
-                                + ', '.join([unicode(a) for a in pr_list]),
+                                + ', '.join([str(a) for a in pr_list]),
                                 context['user']
                                 )
                         pr_a = pr_list[0]
@@ -874,7 +873,7 @@ def student(request, **kwargs):
                             if not created:
                                 log_message(
                                     'WARNING: attempt to create selfie clone again: '
-                                        + unicode(clone),
+                                        + str(clone),
                                     context['user']
                                     )
                             # ... and the selfie should be used as predecessor assignment
@@ -897,7 +896,7 @@ def student(request, **kwargs):
                         pr_a.successor = a
                         pr_a.save()
                         log_message(
-                            'Work assigned: ' + unicode(pr_a),
+                            'Work assigned: ' + str(pr_a),
                             context['user']
                             )
                     else:
@@ -919,7 +918,7 @@ def student(request, **kwargs):
                         sub_set = pr_set.filter(successor__time_uploaded=DEFAULT_DATE)
                         log_message(
                             'TRACE - predecessors w/o successor having uploaded: '
-                                + ', '.join([unicode(a) for a in sub_set]),
+                                + ', '.join([str(a) for a in sub_set]),
                             context['user']
                             )
                         if sub_set:
@@ -969,7 +968,7 @@ def student(request, **kwargs):
                         if not created:
                             log_message(
                                 'WARNING: attempt to create clone again: '
-                                    + unicode(clone),
+                                    + str(clone),
                                 context['user']
                                 )
                         # ... and make this cloned work the predecessor 
@@ -978,13 +977,13 @@ def student(request, **kwargs):
                         if not created:
                             log_message(
                                 'WARNING: attempt to create "build-on-clone" assignment again: '
-                                    + unicode(a),
+                                    + str(a),
                                 context['user']
                                 )
                         clone.successor = a
                         clone.save()
                         log_message(
-                            'Clone assigned: ' + unicode(clone),
+                            'Clone assigned: ' + str(clone),
                             context['user']
                             )
                         # only inform the student of building on a clone if own work was cloned
@@ -1065,7 +1064,7 @@ def student(request, **kwargs):
                                 context['user']
                                 )
                         log_message(
-                            'Final review assigned: ' + (unicode(rev)),
+                            'Final review assigned: ' + (str(rev)),
                             context['user']
                             )
                     else:
@@ -1093,7 +1092,7 @@ def student(request, **kwargs):
                     context,
                     'Data is inconsistent',
                     '{r} &ne; {g}'.format(r=rat, g=pr.grade),
-                    'Rating mismatch: {r} for {u}'.format(r=rat, u=unicode(pr))
+                    'Rating mismatch: {r} for {u}'.format(r=rat, u=str(pr))
                     )
             # double-check whether review is complete
             elif not pr.is_complete():
@@ -1113,14 +1112,14 @@ def student(request, **kwargs):
                     lang.phrase('Review_submitted_on').format(
                         time=lang.ftime(pr.time_submitted)
                         ),
-                    'Review resubmission: ' + unicode(pr)
+                    'Review resubmission: ' + str(pr)
                     )
             else:
                 sub = request.POST.get('sub', 0)
                 # register the review as "submitted" 
                 pr.time_submitted = timezone.now()
                 pr.save()
-                log_message('Review submitted: ' + unicode(pr), context['user'])
+                log_message('Review submitted: ' + str(pr), context['user'])
                 offense = pr.check_offensiveness()
                 if offense:
                     log_message('Language issue: ' + offense, context['user'])
@@ -1138,13 +1137,13 @@ def student(request, **kwargs):
                             course=est_c, dummy_index=-1)
                         if created:
                             log_message('Rejecting - created course instructor: '
-                                + unicode(cm_s), context['user'])
+                                + str(cm_s), context['user'])
                         # create (if needed) the "course manager participant" for this estafette
                         cm_p, created = Participant.objects.get_or_create(student=cm_s,
                             estafette=est)
                         if created:
                             log_message('Rejecting - created instructor participant: '
-                                + unicode(cm_p), context['user'])
+                                + str(cm_p), context['user'])
                         # get the "rejection bin" assignment for this estafette
                         ec1 = EstafetteCase.objects.filter(estafette=est.estafette).first()
                         el1 = EstafetteLeg.objects.filter(template=est.estafette.template).first()
@@ -1152,7 +1151,7 @@ def student(request, **kwargs):
                             case=ec1, leg=el1)
                         if created:
                             log_message('Rejecting - created "rejection bin" assignment: '
-                                + unicode(cm_p), context['user'])
+                                + str(cm_p), context['user'])
                         # set the "rejected" flag of the successor's assignment
                         succ_a = pr.assignment.successor
                         succ_a.is_rejected = True
@@ -1162,7 +1161,7 @@ def student(request, **kwargs):
                         pr.assignment.save()
                         pr.save()
                     log_message(
-                        'Rejection succeeded: ' + unicode(pr),
+                        'Rejection succeeded: ' + str(pr),
                         context['user']
                         )
                     msg = (
@@ -1221,7 +1220,7 @@ def student(request, **kwargs):
                     lang.phrase('Response_submitted_on').format(
                         time=lang.ftime(pr.time_appraised)
                         ),
-                    'Appraisal resubmission: ' + unicode(pr)
+                    'Appraisal resubmission: ' + str(pr)
                     )
             else:
                 # NOTE: appraisal data are already saved via AJAX calls
@@ -1243,7 +1242,7 @@ def student(request, **kwargs):
                     context,
                     lang.phrase('Response_received'),
                     lang.phrase('Will_see_response') + xtra,
-                    'Appraisal submitted: ' + unicode(pr)
+                    'Appraisal submitted: ' + str(pr)
                     )
                 # check again for language issues, as appraisals tend to be emotional
                 offense = pr.check_offensiveness()
@@ -1272,7 +1271,7 @@ def student(request, **kwargs):
                     context,
                     lang.phrase('Response_resubmission'),
                     lang.phrase('Response_submitted_on').format(time=lang.ftime(t)),
-                    'Decision appraisal resubmission: ' + unicode(ap)
+                    'Decision appraisal resubmission: ' + str(ap)
                     )
             else:
                 # NOTE: appraisal data are already saved via AJAX calls
@@ -1307,7 +1306,7 @@ def student(request, **kwargs):
                     lang.phrase('Response_received'),
                     lang.phrase('Will_see_appraisal') + xtra,
                     'Decision appraisal (by #{}) submitted: '.format(appraiser)
-                        + unicode(ap)
+                        + str(ap)
                     )
         elif act == 'acknowledge':
             # verify that appraised review is indeed the student's
@@ -1326,7 +1325,7 @@ def student(request, **kwargs):
                     lang.phrase('Appraisal_acknowledged_on').format(
                         time=lang.ftime(pr.time_acknowledged)
                         ),
-                    'Review appraisal re-acknowledgement: ' + unicode(pr)
+                    'Review appraisal re-acknowledgement: ' + str(pr)
                     )
             else:
                 pr.time_acknowledged = timezone.now()
@@ -1404,7 +1403,7 @@ def student(request, **kwargs):
                     lang.phrase('Decision_pronounced_on').format(
                         time=lang.ftime(ao.time_decided)
                         ),
-                    'Decision re-submitted: ' + unicode(ao)
+                    'Decision re-submitted: ' + str(ao)
                     )
             else:
                 # validate the decision attributes
@@ -1461,7 +1460,7 @@ def student(request, **kwargs):
             lang = c.language
             # verify that user is instructor in this course
             if not (c.manager == context['user'] or context['user'] in c.instructors.all()):
-                raise ValueError('Not instructor for course ' + unicode(c))
+                raise ValueError('Not instructor for course ' + str(c))
             # verify that user is qualified as referee for this appeal
             r = Referee.objects.filter(
                 user=context['user'],
@@ -1633,7 +1632,7 @@ def student(request, **kwargs):
                         lang.phrase('You_just_joined').format(
                             relay=p.estafette.title()
                             ),
-                        'New participant: ' + unicode(p)
+                        'New participant: ' + str(p)
                         )
 
     # NOTE: when impersonating a user, instructor users should NOT be seen as instructor
@@ -1775,7 +1774,7 @@ def student(request, **kwargs):
                     ).exclude(time_submitted__gt=DEFAULT_DATE)
             else:
                 instructor_reviews = []
-            log_message('IR: ' + unicode(instructor_reviews) + ' - ' + unicode(p.student), p.student.user)
+            log_message('IR: ' + str(instructor_reviews) + ' - ' + str(p.student), p.student.user)
             # if a_list has more elements than u_list, the student still has a pending assignment
             unfinished_step = len(a_list) > len(u_list)
 
@@ -1853,7 +1852,7 @@ def student(request, **kwargs):
 
                 elif not pr_a:
                     log_message(
-                        'NOTICE: Not showing "rejection bin" assignment ' + unicode(a),
+                        'NOTICE: Not showing "rejection bin" assignment ' + str(a),
                         context['user']
                         )
                 # if student has not yet looked at predecessor's work, that's the next task
@@ -1945,7 +1944,7 @@ def student(request, **kwargs):
                                     'Review assigned to ',
                                     p.student.dummy_name(),
                                     ': assignment',
-                                    unicode(a)
+                                    str(a)
                                     ]),
                                 context['user']
                                 )
@@ -2094,7 +2093,7 @@ def student(request, **kwargs):
                     if fr_to_do > 0 and not past_review_deadline:
                         # get list of cases not yet covered by earlier assignments or final reviews
                         cid_list = [a.case.id for a in a_list] + [fr.assignment.case.id for fr in fr_list]
-                        # print 'CIDs: ' + ', '.join(str(x) for x in cid_list)
+                        # print('CIDs: ' + ', '.join(str(x) for x in cid_list))
                         new_cases = EstafetteCase.objects.filter(
                             estafette=p.estafette.estafette).exclude(id__in=cid_list)
                         log_message('New cases: ' + ', '.join(nc.letter for nc in new_cases), context['user'])

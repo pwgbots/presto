@@ -692,7 +692,7 @@ class ParticipantProgress(object):
         # add the session-encoded database id (to be used for transactions)
         self.encoded_id = h
         # also add a code that can be used as anchor ID in HTML without disclosing database keys
-        self.hexed_id = md5.new(hex(p.id)).hexdigest()
+        self.hexed_id = md5(hex(p.id).encode('ascii', 'ignore')).hexdigest()
         # for dummy participants, add their course student PIN
         if p.student.dummy_index > 0 and p.student.user.username == settings.DEMO_USER_NAME:
             self.pin = p.student.pin()
@@ -712,7 +712,7 @@ class ParticipantProgress(object):
         # cloned assignments and rejected assignments do not constitute a step for the participant
         if a['is_rejected']:
             # Show number of previous step, as that is the work that was rejected
-            rap_data = unicode(a['leg__number'] - 1) + a['case__letter']
+            rap_data = str(a['leg__number'] - 1) + a['case__letter']
             rap = None
             if a['predecessor__id']:
                 rap = p_dict.get(a_dict[a['predecessor__id']]['participant__id'], None)
@@ -1218,7 +1218,7 @@ def course_estafette(request, **kwargs):
             'Added as instructor',
             'You have been made instructor of this course: ' + ce.course.title()
         ])
-        log_message('Added course instructor: ' + unicode(instructor_cs), context['user'])
+        log_message('Added course instructor: ' + str(instructor_cs), context['user'])
 
     # (2) s/he must also be made "instructor participant" in this relay because this
     #     participant will be used as "successor" for assignments that have been rejected,
@@ -1232,7 +1232,7 @@ def course_estafette(request, **kwargs):
             'Fit to review',
             'As instructor you can complete missing reviews when this relay has finished.'
         ])
-        log_message('Added as instructor-participant: ' + unicode(instructor_participant),
+        log_message('Added as instructor-participant: ' + str(instructor_participant),
             context['user'])
     
     # (3) s/he must be made referee for this estafette (if not already)
@@ -1249,7 +1249,7 @@ def course_estafette(request, **kwargs):
             'As instructor you qualify for all steps of this estafette.'
             ])
         log_message(
-            'Qualified as referee for {} (n={})'.format(unicode(ce), n),
+            'Qualified as referee for {} (n={})'.format(str(ce), n),
             context['user']
             )
 

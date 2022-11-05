@@ -316,7 +316,7 @@ def ajax(request, **kwargs):
             cs = CourseStudent(course=c, user=presto_user,
                 time_enrolled=timezone.now(), last_action=timezone.now())
             cs.save()
-            log_message('AJAX: Enrolled in course ' + unicode(c), presto_user)
+            log_message('AJAX: Enrolled in course ' + str(c), presto_user)
         elif a == 'save assignment item':
             aid = decode(request.POST.get('h', ''), user_session.encoder)
             ua = Assignment.objects.get(pk=aid)
@@ -325,7 +325,7 @@ def ajax(request, **kwargs):
             ia.rating = request.POST.get('r', '')
             ia.comment = request.POST.get('c', '')
             ia.save()
-            log_message('Assignment item saved: ' + unicode(ia), presto_user)
+            log_message('Assignment item saved: ' + str(ia), presto_user)
             # Calculate minutes since the assignment was assigned.
             m = int((timezone.now() - ua.time_assigned).total_seconds() / 60) + 1
             jd['mtw'] = int(ua.leg.min_review_minutes - m)
@@ -350,14 +350,14 @@ def ajax(request, **kwargs):
                 pr.grade_motivation = request.POST.get('r', '')
                 # NOTE: time_submitted is not set => saved, but not submitted yet
                 pr.save()
-                log_message('Review saved: ' + unicode(pr), presto_user)
+                log_message('Review saved: ' + str(pr), presto_user)
             elif a == 'save review item':
                 i = pr.assignment.leg.review_items.get(number=request.POST.get('i', ''))
                 ir, created = ItemReview.objects.get_or_create(review=pr, item=i)
                 ir.rating = request.POST.get('r', '')
                 ir.comment = request.POST.get('c', '')
                 ir.save()
-                log_message('Review item saved: ' + unicode(ir), presto_user)
+                log_message('Review item saved: ' + str(ir), presto_user)
             # return whether assignment may be rejected
             pr_a = pr.assignment
             jd['rej'] = pr_a.leg.rejectable
@@ -384,7 +384,7 @@ def ajax(request, **kwargs):
                 log_message('Still {} minutes to wait'.format(jd['mtw']), presto_user)
             else:
                 jd['sub'] = pr.is_complete()
-                log_message('Review complete: ' + unicode(jd['sub']), presto_user)
+                log_message('Review complete: ' + str(jd['sub']), presto_user)
         elif a == 'save appraisal':
             oid = decode(request.POST.get('h', ''), user_session.encoder)
             appraiser = int(request.POST.get('apt', 0))
@@ -394,19 +394,19 @@ def ajax(request, **kwargs):
                 pr.appraisal_comment = request.POST.get('ac', '')
                 # NOTE: time_appraised is not set => saved, but not submitted yet
                 pr.save()
-                log_message('Review appraisal saved: ' + unicode(pr), presto_user)
+                log_message('Review appraisal saved: ' + str(pr), presto_user)
             else:  # referee decision appraisal
                 ap = Appeal.objects.get(pk=oid)
                 if appraiser == 1:  # predecessor's appraisal of the referee decision
                     ap.predecessor_appraisal = int(request.POST.get('ra', 0))
                     ap.predecessor_motivation = request.POST.get('ac', '')
                     ap.save()
-                    log_message('Predecessor response to referee decision saved: ' + unicode(ap), presto_user)
+                    log_message('Predecessor response to referee decision saved: ' + str(ap), presto_user)
                 else:
                     ap.successor_appraisal = int(request.POST.get('ra', 0))
                     ap.successor_motivation = request.POST.get('ac', '')
                     ap.save()
-                    log_message('Successor response to referee decision saved: ' + unicode(ap), presto_user)
+                    log_message('Successor response to referee decision saved: ' + str(ap), presto_user)
         elif a == 'save improvement appraisal':
             oid = decode(request.POST.get('h', ''), user_session.encoder)
             pr = PeerReview.objects.get(pk=oid)
@@ -416,7 +416,7 @@ def ajax(request, **kwargs):
             log_message(
                 'Improvement appraisal ({}) saved: {}'.format(
                     pr.improvement_appraisal,
-                    unicode(pr)
+                    str(pr)
                     ),
                 presto_user
                 )
@@ -432,13 +432,13 @@ def ajax(request, **kwargs):
                 if ob.referee.id == refid:
                     ob.grade = int(request.POST.get('dr', 0)) + int(request.POST.get('dpr', 0)) * 256
                     ob.grade_motivation = request.POST.get('dm', '')
-                    ob.predecessor_penalty = float(request.POST.get('pp', 0))
-                    ob.successor_penalty = float(request.POST.get('sp', 0))
+                    ob.predecessor_penalty = float(request.POST.get('pp', 0).replace(',', '.'))
+                    ob.successor_penalty = float(request.POST.get('sp', 0).replace(',', '.'))
                     # NOTE: time_decided is not set => saved, but not submitted yet
                     ob.save()
                     jd['pt'] = ob.appeal.review.reviewer.student.course.language.penalties_as_text(
                         ob.predecessor_penalty, ob.successor_penalty)
-                    log_message('Objection decision saved: ' + unicode(ob), presto_user)
+                    log_message('Objection decision saved: ' + str(ob), presto_user)
                 else:
                     jd['error'] = 'Objection decision not authenticated'
                     log_message(
@@ -453,14 +453,14 @@ def ajax(request, **kwargs):
                 ap = Appeal.objects.get(pk=apid)
                 ap.grade = int(request.POST.get('dr', 0)) + int(request.POST.get('dpr', 0)) * 256
                 ap.grade_motivation = request.POST.get('dm', '')
-                # print ap.grade_motivation
+                # print(ap.grade_motivation)
                 ap.predecessor_penalty = float(request.POST.get('pp', 0))
                 ap.successor_penalty = float(request.POST.get('sp', 0))
                 # NOTE: time_decided is not set => saved, but not submitted yet
                 ap.save()
                 jd['pt'] = ap.review.reviewer.student.course.language.penalties_as_text(
                     ap.predecessor_penalty, ap.successor_penalty)
-                log_message('Appeal decision saved: ' + unicode(ap), presto_user)
+                log_message('Appeal decision saved: ' + str(ap), presto_user)
         elif a == 'get question' or a == 'claim question':
             # NOTE: for now, questions are stored in files in the LOG directory
             # TO DO: implement this via the database!
@@ -783,7 +783,7 @@ def ajax(request, **kwargs):
                         log_message(
                             'Uploaded file "{}" as attachment for estafette case {}'.format(
                                 f.name,
-                                unicode(ec)
+                                str(ec)
                                 ),
                             presto_user
                             )
@@ -911,7 +911,7 @@ def ajax(request, **kwargs):
             elid = decode(request.POST.get('h', ''), user_session.encoder)
             el = EstafetteLeg.objects.get(pk=elid)
             # NOTE: by default, affected items are REVIEW items
-            # print request.POST.get('ric', 'true')
+            # print(request.POST.get('ric', 'true'))
             if request.POST.get('ric') == 'true':
                 its = el.review_items
                 icat = 'review'
@@ -927,7 +927,7 @@ def ajax(request, **kwargs):
                     appraisal = request.POST.get('ap', ''))
                 i.save()
                 log_message(
-                    'Added {} item #{} to leg {}'.format(icat, n, unicode(el)),
+                    'Added {} item #{} to leg {}'.format(icat, n, str(el)),
                     presto_user
                     )
             elif a == 'modify item':
@@ -939,7 +939,7 @@ def ajax(request, **kwargs):
                     appraisal = request.POST.get('ap', '')
                 )
                 log_message(
-                    'Modifed {} item #{} of leg {}'.format(icat, n, unicode(el)),
+                    'Modifed {} item #{} of leg {}'.format(icat, n, str(el)),
                     presto_user
                     )
             elif a == 'reorder item':
@@ -960,7 +960,7 @@ def ajax(request, **kwargs):
                 its.filter(number=n).delete()
                 its.filter(number__gt=n).update(number=F('number') - 1)
                 log_message(
-                    'Removed {} item #{} from leg {}'.format(icat, n, unicode(el)),
+                    'Removed {} item #{} from leg {}'.format(icat, n, str(el)),
                     presto_user
                     )
             set_leg_json(el, jd)
@@ -983,7 +983,7 @@ def ajax(request, **kwargs):
                 p.student.dummy_name()
                 )
             jd['pm'] = p.student.user.email
-            jd['ph'] = render_to_string('participant_history.html', context)
+            jd['ph'] = render_to_string('presto/participant_history.html', context)
         elif a == 'participant scan':
             # for time and other formatting; instructor views in English only!
             hx = request.POST.get('h', '')
@@ -997,7 +997,7 @@ def ajax(request, **kwargs):
                 'uploaded': False,
                 'scan': ''
                 } for i in range(1, p.estafette.estafette.template.nr_of_legs() + 1)]
-            # print step_list
+            # print(step_list)
             # now add data on each step for which there exists an assignment for this participant
             # (excluding clones and rejected assignments)
             a_list = Assignment.objects.filter(participant=p
@@ -1015,9 +1015,9 @@ def ajax(request, **kwargs):
                     ),
                     1
                     )
-            # print step_list
+            # print(step_list)
             context = {'steps': step_list}
-            jd['ps'] = render_to_string('participant_scan.html', context)
+            jd['ps'] = render_to_string('presto/participant_scan.html', context)
                 
     # catch any exceptions
     except Exception as e:

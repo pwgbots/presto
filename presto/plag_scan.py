@@ -430,7 +430,7 @@ def scan_assignment(aid):
         # If report exists, read it, get the max. percentage,
         # and return its contents
         if os.path.isfile(report_path):
-            content = unicode(open(report_path, 'r').read(), errors='ignore')
+            content = open(report_path, 'r').read()
             return (
                 a.scan_result,
                 markdown(content).replace(
@@ -444,7 +444,7 @@ def scan_assignment(aid):
     resuming = False
     if os.path.isfile(progress_path):
         try:
-            data = loads(unicode(open(progress_path, 'r').read(), errors='ignore'))
+            data = loads(str(open(progress_path, 'r').read(), errors='ignore'))
             # get time since data was saved
             t_diff = round(time.time() - data['start'])
             # first verify that assignment IDs match
@@ -802,7 +802,7 @@ def scan_one_assignment():
             participant__estafette__id__gt=id_of_first_relay_to_scan
             ).values_list('id', flat=True)[:1]
         if a:
-            log_message('Single scan: ' + unicode(a))
+            log_message('Single scan: ' + str(a))
             scan_assignment(a[0])
     except Exception as e:
         # catch errors to log them (should not be visible to participant)

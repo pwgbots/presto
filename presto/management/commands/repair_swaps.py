@@ -1,8 +1,6 @@
 # Software developed for the PrESTO project -- see http://presto.tudelft.nl/wiki
-# Copyright (c) 2017-2019 by Pieter Bots. All rights reserved.
+# Copyright (c) 2017-2022 by Pieter Bots. All rights reserved.
 
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 from django.conf import settings
 from django.core.management.base import BaseCommand
 

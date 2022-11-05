@@ -3,7 +3,7 @@
 # Project wiki: http://presto.tudelft.nl/wiki
 
 """
-Copyright (c) 2019 Delft University of Technology
+Copyright (c) 2022 Delft University of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,9 +23,6 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db.models import F
@@ -58,7 +55,7 @@ class Command(BaseCommand):
             obj.description=markdown(obj.description)
             obj.default_rules=markdown(obj.default_rules)
             obj.save()
-        print 'Done.'
+        print('Done.')
         q = EstafetteLeg.objects.exclude(description='').exclude(description__icontains='<p>')
         print(len(q), ' estafette legs')
         for obj in q:
@@ -66,19 +63,19 @@ class Command(BaseCommand):
             obj.upload_instruction=markdown(obj.upload_instruction)
             obj.review_instruction=markdown(obj.review_instruction)
             obj.save()
-        print 'Done.'
+        print('Done.')
         q = Estafette.objects.exclude(description='').exclude(description__icontains='<p>')
         print(len(q), ' estafettes')
         for obj in q:
             obj.description=markdown(obj.description)
             obj.save()
-        print 'Done.'
+        print('Done.')
         q = EstafetteCase.objects.exclude(description='').exclude(description__icontains='<p>')
         print(len(q), ' case descriptions')
         for obj in q:
             obj.description=markdown(obj.description)
             obj.save()
-        print 'Done.'
+        print('Done.')
         q = PeerReview.objects.exclude(grade_motivation='').exclude(grade_motivation__icontains='<p>')
         print(len(q), ' peer reviews')
         for obj in q:
@@ -86,7 +83,7 @@ class Command(BaseCommand):
             obj.appraisal_comment=markdown(obj.appraisal_comment)
             obj.improvement_appraisal_comment=markdown(obj.improvement_appraisal_comment)
             obj.save()
-        print 'Done.'
+        print('Done.')
         q = Appeal.objects.exclude(grade_motivation='').exclude(grade_motivation__icontains='<p>')
         print(len(q), ' appeals')
         for obj in q:
@@ -94,4 +91,4 @@ class Command(BaseCommand):
             obj.predecessor_motivation=markdown(obj.predecessor_motivation)
             obj.successor_motivation=markdown(obj.successor_motivation)
             obj.save()
-        print 'Done.'
+        print('Done.')

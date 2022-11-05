@@ -87,7 +87,8 @@ LTI_VERIFICATION = False
 
 # returns a deterministic hash of a given string
 def n_hash(string, multiplier=1):
-    return md5((settings.SECRET_KEY + string) * multiplier).hexdigest()
+    return md5(((settings.SECRET_KEY + string) * multiplier
+        ).encode('ascii', 'ignore')).hexdigest()
 
 # n_hash multipliers used for security of edX user registration. 
 FORM_MULTIPLIER = 11

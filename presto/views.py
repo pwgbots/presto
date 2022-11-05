@@ -177,7 +177,7 @@ def dataset(request, **kwargs):
                     set_history_properties(context, p)
                     context['object'] = p
                     context['base_url'] = '.'
-                    data = render_to_string('estafette_history.html', context)
+                    data = render_to_string('presto/estafette_history.html', context)
                     data = data.replace('/static/presto', 'presto')
                     zip_file.writestr(
                         'p{}.html'.format(p.student.id),

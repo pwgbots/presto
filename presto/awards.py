@@ -261,7 +261,7 @@ def awards(request):
 # lookup function to see whether a *participant* badge with attained level l
 # and participant p has been issued
 def lookup_badge(b_dict, l, p):
-    for k, b in b_dict.iteritems():
+    for k, b in b_dict.items():
         if b['AL'] == l and b['PID'] == p.id and not b.get('RID', False):
             return True
     return False

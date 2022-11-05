@@ -59,8 +59,8 @@ def demo_login(request):
     context = generic_context(request)
     context['page_title'] = 'Presto demonstration'
     # define two *deterministic* 32 hex digit keys to encode/decode the ID parameters
-    de_key = md5(context['page_title']).hexdigest()
-    ds_key = md5(de_key).hexdigest()
+    de_key = md5(context['page_title'].encode('ascii', 'ignore')).hexdigest()
+    ds_key = md5(de_key.encode('ascii', 'ignore')).hexdigest()
     # if PIN is passed, hex is the encoded ID
     pin = request.POST.get('pin', '').strip().upper()
     h = request.POST.get('hex', '').strip()

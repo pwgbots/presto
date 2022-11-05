@@ -262,7 +262,7 @@ def render_certified_badge(badge):
         badge.time_last_rendered = timezone.now()
         badge.rendering_count += 1
         badge.save()
-        log_message('Rendered this badge: ' + unicode(badge))
+        log_message('Rendered this badge: ' + str(badge))
         # output image to browser (do NOT save it as a file)
         response = HttpResponse(content_type='image/png')
         img.save(response, 'PNG')

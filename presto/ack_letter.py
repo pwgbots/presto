@@ -179,7 +179,7 @@ class HTMLtoPDFParser(HTMLParser):
                 self.indent -= 6
 
     def new_line(self, justify = False):
-        # print "new line ({} words)".format(len(self.word_list))
+        # print("new line ({} words)".format(len(self.word_list)))
         top_offset = 0
         bottom_offset = 0
         height = self.font_size * POINT_TO_MM * 0.6
@@ -226,7 +226,7 @@ class HTMLtoPDFParser(HTMLParser):
         f = self.font()
         self.pdf.set_font(f['family'], f['style'], f['size'])
         ww = self.pdf.get_string_width(w)
-        # print 'w="{}", width={:%3.1f}, pos_x={:3.1f}'.format(w, ww, self.line_width)
+        # print('w="{}", width={:%3.1f}, pos_x={:3.1f}'.format(w, ww, self.line_width))
         if self.indent + self.line_width + ww >= self.text_width:
             self.new_line(self.justify)
         self.word_list.append({

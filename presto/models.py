@@ -783,7 +783,7 @@ class CaseUpload(models.Model):
         return '#{}-{} ({})'.format(
             self.id,
             self.original_name,
-            unicode(self.estafette)
+            str(self.estafette)
             )
 
 
@@ -1078,7 +1078,7 @@ class CourseEstafette(models.Model):
             ssl.append(plural_s(pob_cnt, 'potential objection'))
         if ssl:
             ssl = '; '.join(ssl)
-            log_message('Pending decisions for ' + unicode(self) + ': ' + ssl)
+            log_message('Pending decisions for ' + str(self) + ': ' + ssl)
             return ssl
         return ''
 
@@ -1088,7 +1088,7 @@ class CourseEstafette(models.Model):
         if self.course.code != 'DEMO':
             return ''
         # get a *deterministic* 33-digit hash with a leading non-zero digit
-        hx = md5(unicode(self).encode('ascii', 'ignore')).hexdigest()
+        hx = md5(str(self).encode('ascii', 'ignore')).hexdigest()
         return int_to_base36(int('7' + hx, 16))[1:6]
         # NOTE: 1:6 is an arbitrary selection; with the added leading 7, the 32+1 hex digits
         #       will give at least 25 base36 digits
@@ -1102,7 +1102,7 @@ class CourseEstafette(models.Model):
         if not self.course.is_edX:
             return None
         # get a *deterministic* 32-digit hash
-        hx = md5(unicode(self).encode('ascii', 'ignore') * 3).hexdigest()
+        hx = md5(str(self).encode('ascii', 'ignore') * 3).hexdigest()
         b36 = int_to_base36(int('b' + hx, 16))
         return (b36[1:9], b36[9:25])
 
@@ -1125,13 +1125,13 @@ class Participant(models.Model):
     def __str__(self):
         return '#{}-{}-{}{}'.format(
             self.id,
-            unicode(self.student),
-            unicode(self.estafette),
+            str(self.student),
+            str(self.estafette),
             '--DELETED' if self.deleted else ''
             )
 
     def shorthand(self):
-        return unicode(self.student)
+        return str(self.student)
 
     # returns number of steps and reviews done as a fast proxy for participant progress
     # NOTE: this proxy is used only in student.py
@@ -1201,8 +1201,8 @@ class PartnerInvitation(models.Model):
     def __str__(self):
         return '#{}-{}-{}: {}'.format(
             self.id,
-            unicode(self.participant),
-            unicode(self.student),
+            str(self.participant),
+            str(self.student),
             INVITATION_STATUS[self.status]
             )
 
@@ -1230,8 +1230,8 @@ class Partner(models.Model):
     def __str__(self):
         return '#{}-{}-{}: {}'.format(
             self.id,
-            unicode(self.student),
-            unicode(self.participant),
+            str(self.student),
+            str(self.participant),
             SEPARATION_STATUS[self.status]
             )
 
@@ -1286,7 +1286,7 @@ class Assignment(models.Model):
             self.pk,
             self.leg.number,
             self.case.letter,
-            unicode(self.participant),
+            str(self.participant),
             suffix
             )
 
@@ -1306,7 +1306,7 @@ class Assignment(models.Model):
             t = timezone.now()
 
         # NOTE: As of 15-11-2019, the speed bonus deadlines per step are fixed
-        if r.start_time > tz.localize(datetime.strptime('2019-11-15', SHORT_DATE)):
+        if r.start_time > timezone.make_aware(datetime.strptime('2019-11-15', SHORT_DATE)):
             # get the bonus deadlines per step as a dictionary {step number: date-time}
             bd = r.bonus_deadlines().get(self.leg.number, False)
             if not bd:
@@ -1318,7 +1318,7 @@ class Assignment(models.Model):
             
             # NOTE: Per 01-01-2019, the speed bonus term was shortened to T - MAX(T/4, 24h), i.e.,
             #       the time available for assignments minus either 25% of the time, or 1 full day.
-            if r.start_time < tz.localize(datetime.strptime('2019-01-01', SHORT_DATE)):
+            if r.start_time < timezone.make_aware(datetime.strptime('2019-01-01', SHORT_DATE)):
                 no_bonus_hours = round((r.deadline - r.start_time).total_seconds() / 3600 / 4)
                 if no_bonus_hours > 24:
                     no_bonus_delta = timedelta(hours=no_bonus_hours)
@@ -1399,7 +1399,7 @@ class ParticipantUpload(models.Model):
 
     def __str__(self):
         return '{}-{}: {} ({})'.format(
-            unicode(self.assignment),
+            str(self.assignment),
             self.file_name,
             self.upload_file.name,
             timezone.localtime(self.time_uploaded).strftime(SHORT_DATE_TIME)
@@ -1420,7 +1420,7 @@ class UserDownload(models.Model):
         return '{}: {} downloaded {}'.format(
             timezone.localtime(self.time_downloaded).strftime(SHORT_DATE_TIME),
             prefixed_user_name(self.user),
-            unicode(self.assignment)
+            str(self.assignment)
             )
 
 
@@ -1454,7 +1454,7 @@ class PeerReview(models.Model):
             ts = ' ({})'.format(
                 timezone.localtime(self.time_submitted).strftime(SHORT_DATE_TIME)
                 )
-        if self.grade < 1:
+        if int(self.grade) < 1:
             gr = '?'
         else:
             gr = str(self.grade)
@@ -1476,7 +1476,7 @@ class PeerReview(models.Model):
             ap += ' [APPEAL]'
         return '#{}-{}: {}{} - {}{}{}{}'.format(
             self.id,
-            unicode(self.reviewer),
+            str(self.reviewer),
             self.assignment.case.letter,
             self.assignment.leg.number,
             gr,
@@ -1617,7 +1617,7 @@ class ItemReview(models.Model):
     rating = models.IntegerField(blank=True, default=0)
 
     def __str__(self):
-        return '#{}-{}'.format(self.id, unicode(self.review))
+        return '#{}-{}'.format(self.id, str(self.review))
 
 
 class RefereeExam(models.Model):
@@ -1636,7 +1636,7 @@ class RefereeExam(models.Model):
         null=True, blank=True, on_delete=models.SET_NULL)
 
     def __str__(self):
-        return '#{}-Exam: {}'.format(self.id, unicode(self.estafette_leg))
+        return '#{}-Exam: {}'.format(self.id, str(self.estafette_leg))
 
 
 class Referee(models.Model):
@@ -1656,7 +1656,7 @@ class Referee(models.Model):
     def __str__(self):
         return '{} - {}'.format(
             prefixed_user_name(self.user),
-            unicode(self.estafette_leg)
+            str(self.estafette_leg)
             )
 
 
@@ -1697,7 +1697,7 @@ class Appeal(models.Model):
     def __str__(self):
         return 'Ref: {} -- Rev: {}'.format(
             prefixed_user_name(self.referee.user),
-            unicode(self.review)
+            str(self.review)
             )
 
 
@@ -1746,7 +1746,7 @@ class Objection(models.Model):
     def __str__(self):
         return 'Ref: {} -- Ap: {}'.format(
             prefixed_user_name(self.referee.user),
-            unicode(self.appeal)
+            str(self.appeal)
             )
 
 
@@ -1809,7 +1809,7 @@ class PrestoBadge(models.Model):
                 self.course.code,
                 self.attained_level,
                 self.levels,
-                unicode(self.participant)
+                str(self.participant)
                 )
         if self.referee:
             return '#{}-{} REF ({}/{}) {}'.format(
@@ -1817,7 +1817,7 @@ class PrestoBadge(models.Model):
                 self.course.code,
                 self.attained_level,
                 self.levels,
-                unicode(self.referee)
+                str(self.referee)
                 )
         return '#{}-{} - anonymous badge'.format(self.id, self.course.code)
 
@@ -1888,13 +1888,13 @@ class LetterOfAcknowledgement(models.Model):
     def __str__(self):
         if self.referee:
             task = 'Referee'
-            owner = unicode(self.referee)
+            owner = str(self.referee)
         elif self.participant:
             task = 'Participant'
-            owner = unicode(self.participant)
+            owner = str(self.participant)
         return '#{}-{} {} acknowledgement to {}'.format(
             self.id,
-            unicode(self.estafette),
+            str(self.estafette),
             task,
             owner
             )

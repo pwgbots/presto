@@ -94,7 +94,7 @@ def download(request, **kwargs):
                 raise ValueError('No attachment file for this case')
             f = ec.upload.upload_file
             ext = os.path.splitext(f.name)[1]
-            w = FileWrapper(file(f.path, 'rb'))
+            w = FileWrapper(open(f.path, 'rb'))
             response = HttpResponse(w, 'application/octet-stream')
             response['Content-Disposition'] = (
                 'attachment; filename="attachment-case-{}{}"'.format(
@@ -252,7 +252,7 @@ def download(request, **kwargs):
                     ap.time_first_viewed = timezone.now()
                     ap.save()
                     log_message(
-                        'First view by referee: ' + unicode(ap),
+                        'First view by referee: ' + str(ap),
                         context['user']
                         )
             return response

@@ -59,7 +59,7 @@ def guest_login(request):
     context['page_title'] = 'Presto guest login'
     nid = request.POST.get('netid', '').strip().lower()
     pwd = request.POST.get('passw', '').strip()
-    hex = md5(nid + '|' + pwd).hexdigest()
+    hex = md5((nid + '|' + pwd).encode('ascii', 'ignore')).hexdigest()
     # see if username and password match
     if GUEST_LIST.get(nid, '') == hex:
         # see if nid identifies a user

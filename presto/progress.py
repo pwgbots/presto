@@ -36,6 +36,7 @@ from .models import CourseEstafette, Participant, Assignment, PeerReview, DEFAUL
 # python modules
 from datetime import datetime
 from io import BytesIO
+import math
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -60,7 +61,7 @@ def progress(request, **kwargs):
     # NOTE: a downloaded image is part the current page, meaning that the coding keys
     # should NOT be rotated; this is achieved by passing "NOT" as test code.
     context = generic_context(request, 'NOT')
-    try:
+    if True:
         # check whether user can have student role
         if not (has_role(context, 'Student') or has_role(context, 'Instructor')):
             raise Exception('No access')
@@ -137,7 +138,8 @@ def progress(request, **kwargs):
         response = HttpResponse(content_type='image/png')
         img.save(response, 'PNG')
         return response
-
+    try:
+        print('HERE')
     except Exception as e:
         log_message(
             'ERROR while generating progress chart: ' + str(e),
@@ -416,13 +418,15 @@ def blue_range(n):
         tud = []
         m = 2.0 / n
     light = [
-        [198 - i*m*198, 238 - i*m*72, 250 - i*m*10]
-            for i in range(n/2 - 1, -1, -1)
+        [round(198 - i*m*198), round(238 - i*m*72), round(250 - i*m*10)]
+            for i in range(math.trunc(n / 2) - 1, -1, -1)
         ]
-    dark = [[15 - i*m*15, 17 + i*m*149, 80 + i*m*160] for i in range(n/2)]
+    dark = [[round(15 - i*m*15), round(17 + i*m*149), round(80 + i*m*160)]
+            for i in range(math.trunc(n / 2))
+        ]
     # registration color is a light shade of grey
     blues = dark + tud + light + [[235, 235, 235]]
-    return ['#' + ''.join(['{:02x}'.format(int(r)) for r in c]) for c in blues]
+    return ['#' + ''.join(['{:02x}'.format(r) for r in c]) for c in blues]
 
 
 # returns a list of n shades of TU Delft teal from dark to light
@@ -432,6 +436,8 @@ def teal_range(n):
     dark_teal = [40, 90, 80]  # to be the end of the range
     tud_teal = [102, 188, 170]
     m = 1 / (n - 1)
-    teals = [[40 + i*m*62, 90 + i*m*98, 80 + i*m*90] for i in range(n)]
+    teals = [[round(40 + i*m*62), round(90 + i*m*98), round(80 + i*m*90)]
+            for i in range(n)
+        ]
     return ['#' + ''.join(['{:02x}'.format(int(r)) for r in c]) for c in teals]
 

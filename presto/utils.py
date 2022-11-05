@@ -113,7 +113,7 @@ def log_message(msg, user=None):
     dt = datetime.now().strftime('%Y-%m-%d  %H:%M:%S')
     usr = 'anonymous' if user is None else prefixed_user_name(user)
     log_line = '{} [{}] [{}] {}\n'.format(dt, settings.USER_IP, usr, msg)
-    # print log_line
+    # print(log_line)
     path = os.path.join(
         settings.LOG_DIR,
         'presto-' + datetime.today().strftime('%Y%m%d') + '.log'
@@ -174,7 +174,7 @@ def encode(n, k, deterministic=False):
     sb = {'0': 0, '1': 1, '2': 1, '3': 2, '4': 1, '5': 2, '6': 2, '7': 3,
           '8': 1, '9': 2, 'a': 2, 'b': 3, 'c': 2, 'd': 3, 'e': 2, 'f': 4}
     b = 0
-    for c in code.itervalues():
+    for c in code.values():
         b += sb[c]
     # store this count (modulo 16) as the last hex digit to allow data integrity checking
     code[31] = format(b % 16, 'x')
@@ -238,7 +238,8 @@ def test_encoding(n):
 
 # returns a 32 hex digit string based on the current date and the passed parameter
 def day_code(x):
-    return md5((date.today().strftime("%d%m%Y%m%d") + str(x)) * 23).hexdigest()
+    return  md5(((date.today().strftime("%d%m%Y%m%d") + str(x)) * 23
+        ).encode('ascii', 'ignore')).hexdigest()
 
 
 # converts a date (+ time) string to a datetime value by trying out different patterns

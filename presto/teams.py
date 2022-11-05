@@ -1966,7 +1966,7 @@ def team_lookup_dict(r):
             if len(tpl) == 2:
                 dt = FOREVER_DATE
             else:
-                dt = tz.localize(datetime.strptime(tpl[2], SHORT_DATE_TIME))
+                dt = timezone.make_aware(datetime.strptime(tpl[2], SHORT_DATE_TIME))
             # append the tuple to the list for the leading participant (or create a new entry)
             if lpid in tl_dict:
                 tl_dict[lpid].append((mpid, dt))
@@ -2050,7 +2050,7 @@ def time_separated(lp, pp):
                 if len(tpl) == 2:
                     return FOREVER_DATE
                 else:
-                    return tz.localize(datetime.strptime(tpl[2], SHORT_DATE_TIME))
+                    return timezone.make_aware(datetime.strptime(tpl[2], SHORT_DATE_TIME))
     return DEFAULT_DATE
 
 
