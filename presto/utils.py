@@ -78,7 +78,8 @@ IMPROVEMENTS = ['Pass', 'No_improvement', 'Minor_changes', 'Good_job']
 def prefixed_user_name(user):
     if not user:
         return ''
-    if user.first_name == 'Presto' and user.last_name == 'Administrator':
+    if user.first_name == 'Presto' and (
+            user.last_name == 'Administrator' or user.last_name == 'Demo'):
         return user.get_full_name()
     e = user.email.split('@')
     # assume that only TU Delft uses the e-mail format INITIALS-prefix-LAST NAME

@@ -425,8 +425,7 @@ class CourseStudent(models.Model):
 
     def pin(self):
         return str(
-            int(md5(self.particulars.encode('ascii', 'ignore')
-                    + str(self.dummy_index)
+            int(md5((self.particulars + str(self.dummy_index)).encode('ascii', 'ignore')
                     ).hexdigest()[4:11], 16))[:4].zfill(4)
 
 
