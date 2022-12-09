@@ -819,6 +819,10 @@ UI_PHRASE_DICT = {
         'Decision pronounced on',
         'Besluit bekend gemaakt op'
         ),
+    'Duplicate_assigned_to': (
+        'Same work has been assigned to referee {name}',
+        'Ditzelfde werk eerder toegewezen aan scheidsrechter {name}'
+        ),
     'Referee_prior_rating': (
         'Referee rating of prior steps the predecessor built on',
         'Scheidsrechterbeoordeling van eerdere stappen waar de voorganger op heeft voortgebouwd'

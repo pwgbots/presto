@@ -31,7 +31,7 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
-from django.utils.html import strip_tags 
+from django.utils.html import strip_tags
 
 # python modules
 from datetime import date, datetime, time, timedelta
@@ -94,7 +94,7 @@ MAX_DAYS_BEYOND_END_DATE = 90
 # Allow students who appealed to respond to appeal decisions even after the end
 # time of a relay the response period is limited to a set number of days after
 # the appeal case was decided upon.
-POST_FINISH_DAYS = 3 
+POST_FINISH_DAYS = 3
 
 # HTML inserted to mark the end of a review item list to distinguish it from
 # the overall review summary and appraisal:
@@ -127,7 +127,7 @@ def relay_dir_name():
 
 def template_dir(rx, fn):
     """Return path to file fn uploaded for referee exam rx."""
-    return os.path.join(instance.estafette_leg.template.upload_dir, filename)
+    return os.path.join(rx.estafette_leg.template.upload_dir, fn)
 
 def pq_img_path(pq, fn):
     """Return path to file with name fn submitted to picture queue pq."""
@@ -139,7 +139,7 @@ def pq_img_path(pq, fn):
 class Language(models.Model):
     """
     Courses and associated relays can be offered in a specific language.
-    
+
     To provide a consistent user interface for students, standard UI phrases
     are translated into the course language (if supported).
     For performance reasons, phrases are not stored in the database, but
@@ -162,7 +162,7 @@ class Language(models.Model):
     def phrase(self, key):
         """
         Return the phrase identified by key in this language.
-        
+
         Return key if it is missing in the phrases dict, or the English phrase
         if no translation exists for this language.
         """
@@ -187,7 +187,7 @@ class Language(models.Model):
     def fdate(self, d):
         """
         Return date of datetime d as long format string for this language.
-        
+
         Example: "Wednesday, 1 January 2020". Note that placing a comma after
         the weekday is language-specific, and presently added only for English.
         """
@@ -238,7 +238,7 @@ class Language(models.Model):
     def get_first_language(self):
         """
         Return the first Language instance, or None if none exist.
-        
+
         Written by Marcel Heijink, inspired by:
             http://david.feinzeig.com/blog/2013/05/12/behold-the-power-of-
             default-how-to-set-the-default-argument-of-a-django-model-field-
@@ -276,7 +276,7 @@ class Profile(models.Model):
     Each Presto user has an associated Profile to store additional properties.
 
     Note that except for roles, the properties are based on the authentication
-    used at TU Delft. See presto-project/settings.py for details.
+    used at TU Delft. See presto_project/settings.py for details.
 
     If a user is authenticated via edX, Django's username will be the edX
     identifier, and the user will be prompted to enter his/her first name and
@@ -317,10 +317,10 @@ def save_user_profile(sender, instance, **kwargs):
 class UserSession(models.Model):
     """
     User session data: used for security and for holding status information.
-    
+
     To prevent Cross-Site Request Forgery (CSRF), session keys (32 hex digit
     codes) are routinely "rotated" using an encoder string and a decoder string
-    as explained in the Presto module generic.py. 
+    as explained in the Presto module generic.py.
     The state property is a dictionary (encoded as JSON string) that may hold
     user state variables. It is presently used for tracking whether a demo alias
     is set for the user. If so, the JSON string has two attributes:
@@ -344,7 +344,8 @@ class UserSession(models.Model):
     def __str__(self):
         return '{} [{}] {} {}'.format(
             prefixed_user_name(self.user),
-            str(self.last_action).encode('utf-8').decode('utf-8')[:19],
+            #  str(self.last_action).encode('utf-8').decode('utf-8')[:19],
+            str(self.last_action)[:19],
             self.session_key,
             self.state
             )
@@ -432,7 +433,7 @@ class CourseStudent(models.Model):
 class Item(models.Model):
     """
     Items are used to structure a review to appraise various aspects of a work.
-    
+
     Items may be appraised on different scales, specified by a string according
     to this syntax:
 
@@ -601,7 +602,7 @@ def string_to_file_list(s):
     # empty string => empty file list
     # NOTE: this is functional only if the assignment as items
     if s == '':
-        return fl 
+        return fl
     try:
         n = 1
         rf = s.replace(', ', ';')
@@ -664,7 +665,7 @@ class EstafetteLeg(models.Model):
             self.number,
             self.template.name
             )
-    
+
     def title(self, step):
         return '{} {} &ndash; {}'.format(step, self.number, self.name)
 
@@ -818,7 +819,8 @@ class EstafetteCase(models.Model):
         unique_together = ['estafette', 'letter']
 
     def __str__(self):
-        return 'EC: {} ({}) {}'.format(
+        return 'EC#{}: {} ({}) {}'.format(
+            self.id,
             self.name,
             self.letter,
             self.estafette.name
@@ -886,17 +888,17 @@ class CourseEstafette(models.Model):
         return self.course.code + ' <em>' + self.estafette.name + '</em>' + (
             ' (' + self.suffix + ')' if self.suffix else ''
             )
-    
+
     def title_text(self):
         """Return the title of this course relay as plain text."""
         return self.course.code + ' ' + self.estafette.name + (
             ' (' + self.suffix + ')' if self.suffix else ''
             )
-    
+
     def next_deadline(self):
         """
         Return a 3-tuple (next deadline, phrase for this deadline, color name).
-        
+
         The next deadline is a datetime object, the phrase a key in the UI
         phrases dict, andcolor name denotes a Semantic UI color that reflects
         how pressing the deadline is.
@@ -949,7 +951,7 @@ class CourseEstafette(models.Model):
         return EstafetteLeg.objects.filter(
             template=self.estafette.template
             ).value_list('number', flat=True)
-    
+
     # returns TRUE if final reviews should become available only AFTER the
     # assignment deadline
     def final_reviews_at_end(self):
@@ -994,13 +996,13 @@ class CourseEstafette(models.Model):
             # iterate over all legs
             lnr = 0
             for d in days:
-                et += timedelta(days=d) 
+                et += timedelta(days=d)
                 lnr += 1
                 bd[lnr] = et
-            return bd    
+            return bd
 
         days = (self.deadline - self.start_time).days - 2
-        # three 6-hour blocks per day, skipping midnight - 6 a.m. as workable time 
+        # three 6-hour blocks per day, skipping midnight - 6 a.m. as workable time
         blocks = days * 3
         legs = self.estafette.template.nr_of_legs()
         tzi = timezone.get_current_timezone()
@@ -1035,13 +1037,13 @@ class CourseEstafette(models.Model):
             # iterate over all legs
             for el in EstafetteLeg.objects.filter(template=self.estafette.template):
                 bd[el.number] = block_ends[block]
-                # avoid ambiguities around midnight: subtract one second 
+                # avoid ambiguities around midnight: subtract one second
                 if bd[el.number].astimezone(tzi).hour == 0 and bd[el.number].astimezone(tzi).minute == 0:
                     # log_message('before: ' + bd[el.number].strftime('%A %d-%m %H:%M:%S'))
                     bd[el.number] -= timedelta(seconds=1)
                     # log_message('after: ' + bd[el.number].strftime('%A %d-%m %H:%M:%S'))
                 # advance to next block
-                block += blocks_per_leg 
+                block += blocks_per_leg
         return bd
 
     # returns string stating the number of reviews that have been appealed,
@@ -1114,6 +1116,8 @@ class Participant(models.Model):
     time_registered = models.DateTimeField(default=timezone.now)
     time_last_action = models.DateTimeField(default=timezone.now)
     time_started = models.DateTimeField(default=DEFAULT_DATE)
+    #assignment_extension = models.IntegerField(default=0)
+    #review_extension = models.IntegerField(default=0)
     final_grade = models.FloatField(default=-1)
     deleted = models.BooleanField(default=False)
 
@@ -1156,6 +1160,9 @@ class Participant(models.Model):
         # (2) appealed GIVEN reviews that have not been taken on by a referee yet
         ap_cnt += PeerReview.objects.filter(reviewer=self,
             is_appeal=True, time_appeal_assigned=DEFAULT_DATE).count()
+
+        ob_cnt = 0
+        pob_cnt = 0
         """
         # (3) assigned appeals that have not been decided yet
         ap_cnt += Appeal.objects.filter(time_decided=DEFAULT_DATE)exclude(review__reviewer__ne=self, ).count()
@@ -1225,7 +1232,7 @@ class Partner(models.Model):
         on_delete=models.CASCADE
         )
     instructor_comment = models.TextField(default='', blank=True)
-    
+
     def __str__(self):
         return '#{}-{}-{}: {}'.format(
             self.id,
@@ -1291,7 +1298,7 @@ class Assignment(models.Model):
 
     # returns the bonus deadline as a course-language-formatted date-time string if this assignment
     # was submitted before its bonus_per_step deadline, or if it still can be sumbitted on time
-    # (taking into account the enforced waiting time); otherwise returns an empty string 
+    # (taking into account the enforced waiting time); otherwise returns an empty string
     def on_time_for_bonus(self, min_to_wait = 0):
         # get the course relay
         r = self.participant.estafette
@@ -1309,20 +1316,20 @@ class Assignment(models.Model):
             # get the bonus deadlines per step as a dictionary {step number: date-time}
             bd = r.bonus_deadlines().get(self.leg.number, False)
             if not bd:
-                return '' 
+                return ''
         else:
             # this is the legacy ("floating horizon") bonus deadline computation
             # (1) calculate time between assigned and assignments deadline MINUS 24 hours
             no_bonus_delta = timedelta(days=1)
-            
+
             # NOTE: Per 01-01-2019, the speed bonus term was shortened to T - MAX(T/4, 24h), i.e.,
             #       the time available for assignments minus either 25% of the time, or 1 full day.
             if r.start_time < timezone.make_aware(datetime.strptime('2019-01-01', SHORT_DATE)):
                 no_bonus_hours = round((r.deadline - r.start_time).total_seconds() / 3600 / 4)
                 if no_bonus_hours > 24:
                     no_bonus_delta = timedelta(hours=no_bonus_hours)
-    
-            remaining_time = r.deadline - no_bonus_delta - self.time_assigned 
+
+            remaining_time = r.deadline - no_bonus_delta - self.time_assigned
             # (2) calculate nominal time as remaining time / remaining steps
             nominal_time = remaining_time / (r.estafette.template.nr_of_legs() - self.leg.number + 1)
             # (3) calculate bonus deadline
@@ -1570,7 +1577,7 @@ class PeerReview(models.Model):
             self.improper_language = msg
             self.save()
             return '{} -- {}'.format(self, str(e))
-        
+
         # If the language is OK, scan for blacklisted words.
         real_matches = []
         blacklist = UI_BLACKDICT[lang.code]
@@ -1966,7 +1973,7 @@ class QueuePicture(models.Model):
 class Announcement(models.Model):
     """
     Announcements to be displayed under specified conditions.
-    
+
     Display may be limited to a course, a course relay, and specific user role.
     Display may be dismissable. In that case, the announcement ID is added to
     the "dismissals" field of the user's session status.
@@ -1986,7 +1993,7 @@ class Announcement(models.Model):
     # Urgent announcements are displayed as a warning, otherwise as information.
     urgent = models.BooleanField(default=True)
     dismissable = models.BooleanField(default=True)
-    
+
 
 class Question(models.Model):
     """

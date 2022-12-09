@@ -29,7 +29,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
-from django.utils.html import strip_tags 
+from django.utils.html import strip_tags
 
 from .models import (
     Assignment,
@@ -142,10 +142,10 @@ def ascii_from_doc(path, text_to_ignore=[]):
     """
     Extract text from document and return it as a plain ASCII string after
     removing strings specified by text_to_ignore.
-    
+
     Retrieves text from:
      - a DOCX document (paragraphs only, so ignoring tables, headers, etc.)
-     - a PDF document (using pdftotext --  see presto-project/settings.py)
+     - a PDF document (using pdftotext --  see presto_project/settings.py)
 
     NOTE: Appends "tell tale" properties from DOCX and XLSX files, such as
           file creation time and byte count of embedded images.
@@ -158,11 +158,11 @@ def ascii_from_doc(path, text_to_ignore=[]):
         text = []
         for par in doc.paragraphs:
             # first convert non-breaking spaces to normal ones, and then reduce all whitespace to 1 space
-            text.append(' '.join(par.text.replace(unichr(160), ' ').strip().split()))  
+            text.append(' '.join(par.text.replace('\u00A0', ' ').strip().split()))
         # convert to ASCII to get rid of special chars like curled quotes
-        ascii = (' '.join([s for s in text])).encode('ascii', 'ignore')
+        ascii = (' '.join([s for s in text])).encode('ascii', 'ignore').decode(errors='ignore')
         for t in text_to_ignore:
-            ascii = ascii.replace(t.encode('ascii', 'ignore'), '')
+            ascii = ascii.replace(t, '')
         # NOTE: Word files are also scanned for the images they contain (in xl/media),
         #       and for their creation date (from docProps/core)
         # NOTE: we signal this the start of the "tell-tale list" with a separator
@@ -170,7 +170,7 @@ def ascii_from_doc(path, text_to_ignore=[]):
         error = ''
         try:
             with ZipFile(path, 'r') as zf:
-                # append for each image file a line "<extension>=<file size>+<CRC>" 
+                # append for each image file a line "<extension>=<file size>+<CRC>"
                 for i in zf.infolist():
                     if i.filename[:11] == 'word/media/':
                         ascii += '\n{}={}+{}'.format(
@@ -220,7 +220,7 @@ def ascii_from_doc(path, text_to_ignore=[]):
         error = ''
         try:
             with ZipFile(path, 'r') as zf:
-                # append for each image file a line "<extension>=<file size>+<CRC>" 
+                # append for each image file a line "<extension>=<file size>+<CRC>"
                 for i in zf.infolist():
                     if i.filename[:9] == 'xl/media/':
                         ascii += '\n{}={}+{}'.format(
@@ -262,16 +262,16 @@ def scan_report(text, req_file, path, aid, author, upload_time,
                 related, min_length, text_to_ignore=[]):
     """
     Return a tuple (percent match, report).
-    
+
     text: The text being scanned.
-    req_file: The "requested file" to be checked for overlap with this text. 
-    
+    req_file: The "requested file" to be checked for overlap with this text.
+
     Percent match is calculated as the total length of matching parts in the
     text divided by the length of the original text (minus strings in list
     text_to_ignore) * 100.
     Report is a Markdown-formatted description on size, position, and content
     of matching text of at least min_length characters.
-    
+
     NOTE: Text is also scanned for matching "tell-tales".
     """
     tell_tales = ''
@@ -303,7 +303,7 @@ def scan_report(text, req_file, path, aid, author, upload_time,
                     '_**WARNING:** File `{}` did not scan as OpenDocument._'.format(
                         os.path.basename(path))
                     )
-            else: 
+            else:
                 # parse tell tales (these all have form "key|value")
                 parts = scan_text.split(TELLTALE_SEPARATOR)
                 # separate the text content from the "tell-tale" list
@@ -342,7 +342,7 @@ def scan_report(text, req_file, path, aid, author, upload_time,
                 if epolm > 0:
                     matching_text += BLUE_ELLIPSIS.format(match.a - epolm)
                 epolm = match.a + match.size
-                matching_text += text[match.a:match.a + match.size].decode('utf-8')
+                matching_text += text[match.a:match.a + match.size] #  .decode('utf-8')
         # NOTE: matches that are (only a few characters) longer than an ingnorable string
         #       are not ignored; hence we strip "to ignore" text fragments from the report
         mtl = len(matching_text)
@@ -400,7 +400,7 @@ def scan_report(text, req_file, path, aid, author, upload_time,
             )
     # indicate matches with related work as a negative percentage
     if related:
-        percentage = -percentage   
+        percentage = -percentage
     return (percentage, report)
 
 
@@ -444,7 +444,8 @@ def scan_assignment(aid):
     resuming = False
     if os.path.isfile(progress_path):
         try:
-            data = loads(str(open(progress_path, 'r').read(), errors='ignore'))
+            with open(progress_path, 'r') as ppf:
+                data = loads(ppf.read())
             # get time since data was saved
             t_diff = round(time.time() - data['start'])
             # first verify that assignment IDs match
@@ -553,7 +554,7 @@ def scan_assignment(aid):
 
         # add the "legitimate source" ID list to the data dict
         data['prids'] = prid_list
-        
+
         # next, determine "strings to ignore" when comparing texts
         # (1) ignore case name and mandatory section titles (if any)
         to_ignore = [a.case.name]
@@ -577,7 +578,7 @@ def scan_assignment(aid):
 
         # add "strings to ignore" to the data dict
         data['ignore'] = to_ignore
-            
+
         # assume no match with any other file
         max_perc = 0
         min_perc = 0
@@ -607,7 +608,7 @@ def scan_assignment(aid):
 
         # add "assignments to scan" ID list to the data dict
         data['saids'] = said_list
-        
+
         # when scanning from scratch, no scanned participant uploads yet
         spuid_list = []
 
@@ -616,7 +617,7 @@ def scan_assignment(aid):
 
     # assume that this (resumed) scan will complete the job
     scan_complete = True
-    
+
     # NOTE: for each assignment, multiple files may have been uploaded
     fl = a.leg.file_list()
     for f in fl:
@@ -644,7 +645,7 @@ def scan_assignment(aid):
                 ).exclude(
                 id__in=spuid_list
                 ).values('id', 'assignment__id', 'upload_file')
-            # scan all uploads, compile the reports in a list, and find highest matching percentage 
+            # scan all uploads, compile the reports in a list, and find highest matching percentage
             for u in u_list:
                 # exit inner loop if maximum scans reached, or maximum time has passed
                 # NOTE: we do that here because at this point we know there is still work to do
@@ -691,7 +692,7 @@ def scan_assignment(aid):
     # NOTE: all assignment items are collated into to a single string, which is then
     #       stripped from all its HTML tags (as item texts are HTML)
     # NOTE: this stripping is done "smartly" so that, e.g., </li><li> and </p><p> are
-    #       replaced by a space to avoid sticking words together    
+    #       replaced by a space to avoid sticking words together
 
     if scan_complete:
         # Report the results.
@@ -726,7 +727,7 @@ def scan_assignment(aid):
             os.remove(progress_path)
         except:
             pass
-        # style the first header to make it display in the appropriate status color 
+        # style the first header to make it display in the appropriate status color
         content = markdown(content).replace(
             '<h2>',
             '<h2 style="color: {}">'.format(status_color(max_perc)),
@@ -777,7 +778,7 @@ def scan_one_assignment():
 
     """
     NOTE: The three lines below show how to clear scan results for a specific relay:
-    
+
     log_message('Clearing scans of step STEP for course relay #ID')
     Assignment.objects.filter(
         participant__estafette__id=ID,

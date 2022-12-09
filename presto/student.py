@@ -80,6 +80,7 @@ from presto.generic import (
     set_focus_and_alias,
     warn_user
     )
+from presto.history_view import decided_appeal_dict
 from presto.plag_scan import scan_one_assignment
 from presto.scan import (
     contains_comments,
@@ -268,7 +269,7 @@ def student(request, **kwargs):
                 # needs a first assignment, so get the "rarest" case
                 ec_list = EstafetteCase.objects.filter(estafette=ce.estafette)
                 el_list = EstafetteLeg.objects.filter(template=ce.estafette.template)
-                # just in case: check whether this estafette has legs and a case having number 1
+                # just in case: check whether this estafette has cases and a leg having number 1
                 if ec_list and el_list.filter(number=1):
                     # count number of assignments for step 1 per case
                     ac_list = EstafetteCase.objects.filter(
@@ -1774,7 +1775,6 @@ def student(request, **kwargs):
                     ).exclude(time_submitted__gt=DEFAULT_DATE)
             else:
                 instructor_reviews = []
-            log_message('IR: ' + str(instructor_reviews) + ' - ' + str(p.student), p.student.user)
             # if a_list has more elements than u_list, the student still has a pending assignment
             unfinished_step = len(a_list) > len(u_list)
 
@@ -2392,12 +2392,17 @@ def student(request, **kwargs):
         lang = e.course.language
         scsy = e.scoring_system
         ob_or_ap = ob if ob else ap
-        prior_rev_inst = ''
+        # check if work has been appealed previously
+        duplicate_ap = Appeal.objects.filter(review__assignment_id=a.id
+            ).exclude(id=ap.id).first()
+        duplicate_dict = None
+        if duplicate_ap:
+            duplicate_dict = decided_appeal_dict(context, duplicate_ap, lang)
+            duplicate_dict['prior_ref'] = lang.phrase('Duplicate_assigned_to'
+                ).format(name=prefixed_user_name(duplicate_ap.referee.user))
+            log_message('TRACE: same case appealed previously: {}'.format(str(duplicate_ap)))
 
-        # TEST PATCH!!
-        #if ob_or_ap.id == 1929:
-        #    scsy = 2
-        #    inform_user(context, 'Set scoring system to 2')
+        prior_rev_inst = ''
 
         if scsy == 2:
             if a.leg.number == 1:
@@ -2422,6 +2427,7 @@ def student(request, **kwargs):
             # NOTE: in the template, testing for ob will reveal that the case is an objection
             'ob': ob,
             'ap': ap,
+            'duplicate_ap': duplicate_dict,
             'lang': lang,
             'color': 'black' if ob else 'grey',
             'header_text': lang.phrase('Decide_on_this_' + ('objection' if ob else 'appeal')),
@@ -2623,6 +2629,23 @@ def student(request, **kwargs):
         overduedate = timezone.now() - timedelta(days=MAX_DAYS_BEYOND_END_DATE)
         pr_list = pr_list.exclude(reviewer__estafette__review_deadline__lte=overduedate)
 
+        # get list of assignment IDs for the assignable reviews
+        ra_ids = pr_list.values_list('assignment__id', flat=True)
+        unique = []
+        duplicates = [x for x in ra_ids if x in unique or unique.add(x)]
+        if len(duplicates) > 0:
+            log_message('TRACE: duplicates {}'.format(str(duplicates)))
+        duplicate_cases = {}
+
+        # get set of assigned and/or decided appeals having same assignment
+        adapsa_list = Appeal.objects.filter(review__assignment__in=unique)
+        for a in adapsa_list:
+            log_message('TRACE: duplicate appeal case {} '.format(str(a)))
+            # add the appeal that has been decided
+            lang = a.participant.estafette.course.language
+            duplicate_cases[a.review.assignment.id] = lang.phrase('Duplicate_assigned_to'
+                ).format(name=prefixed_user_name(a.referee.user))
+
         # sort list in ascending order of date/time of the time the predecessor appealed
         pr_list = pr_list.order_by('reviewer__estafette', 'assignment__leg__number',
             'assignment__case__letter', 'time_appraised')
@@ -2661,15 +2684,15 @@ def student(request, **kwargs):
                 succ_subs = Assignment.objects.filter(participant=pr.reviewer,
                     time_uploaded__gt=DEFAULT_DATE, clone_of__isnull=True).count()
                 min_subs = context['ce_appeals'][ce_nr - 1]['steps'] - 1
+                days_old = (timezone.now() - pr.time_appraised).days
                 # add the review against which has been appealed
                 context['ce_appeals'][ce_nr - 1]['appeals'].append({
                     'nr': a_nr,
                     'review': pr,
                     'time': lang.ftime(pr.time_appraised),
-                    'color': ('red'
-                        if (timezone.now() - pr.time_appraised).days > 0
-                        else 'black'
-                        ), 
+                    'color': ('red' if days_old > 1 else ['black', 'orange'][days_old]),
+                    'duplicate': a.id in duplicates,
+                    'duplicate_case': duplicate_cases.get(a.id, False),
                     'hex': encode(pr.id, context['user_session'].encoder),
                     'code': a.case.letter + str(a.leg.number),
                     'case_title': ' '.join([

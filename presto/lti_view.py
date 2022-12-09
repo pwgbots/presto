@@ -42,6 +42,7 @@ import logging
 from pylti.common import (
     LTIException,
     LTINotInSessionException,
+    LTIPostMessageException,
     LTI_PROPERTY_LIST,
     LTIRoleException,
     LTI_ROLES,
@@ -90,7 +91,7 @@ def n_hash(string, multiplier=1):
     return md5(((settings.SECRET_KEY + string) * multiplier
         ).encode('ascii', 'ignore')).hexdigest()
 
-# n_hash multipliers used for security of edX user registration. 
+# n_hash multipliers used for security of edX user registration.
 FORM_MULTIPLIER = 11
 DB_MULTIPLIER = 37
 PWD_MULTIPLIER = 19
@@ -109,7 +110,7 @@ def lti_view(request, **kwargs):
         cs_tuple = ce.LTI_consumer_secret()
         LTI_CONSUMERS[cs_tuple[0]] = {'secret': cs_tuple[1]}
 
-    # Create an LTI object that accepts any request type and any role type.    
+    # Create an LTI object that accepts any request type and any role type.
     lti = LTI('any', 'any')
     log_message('LTI user ID: ' + lti.user_id(request))
     # Verify the LTI consumer request.
@@ -120,7 +121,7 @@ def lti_view(request, **kwargs):
         lti.clear_session(request)
 
     log_message('Verified LTI user ID:' + lti.user_id(request))
-    
+
     post_data = lti._params(request)
     context = generic_context(request)
 
@@ -138,7 +139,7 @@ def lti_view(request, **kwargs):
         return render(request, 'presto/error.html', context)
     # get the course instance -- will be used further below
     presto_course = qset.first()
-    
+
     # check whether a grade needs to be passed back
     extra = kwargs.get('extra', '')
     if extra == 'grade':
@@ -194,7 +195,7 @@ def lti_view(request, **kwargs):
 
     # use HASHED edX learner ID as Django username
     u_name = 'ZZZ-' + n_hash(uid, DB_MULTIPLIER)
-    
+
     # check whether the passed user ID has (just now) been registered
     qset = User.objects.filter(username=u_name)
     if qset:
@@ -202,7 +203,7 @@ def lti_view(request, **kwargs):
         presto_user = qset.first()
         presto_user.backend = settings.DEMO_USR_BACKEND
         login(request, presto_user)
-        # get new generic context data for this user 
+        # get new generic context data for this user
         context = generic_context(request)
         # enroll user in this course (if not already)
         if CourseStudent.objects.filter(course=presto_course, user=presto_user).count() == 0:
@@ -390,7 +391,7 @@ class LTI(object):
     def user_id(self, request):
         return request.session.get('user_id', None)
 
-    # NOTE: returns the LTI user roles as a list of strings 
+    # NOTE: returns the LTI user roles as a list of strings
     def user_roles(self, request):
         roles = request.session.get('roles', None)
         if not roles:
@@ -426,7 +427,7 @@ class LTI(object):
                 lti_launch_url = etree.SubElement(result_data, 'ltiLaunchUrl')
                 lti_launch_url.text = launch_url
         return "<?xml version='1.0' encoding='utf-8'?>\n{}".format(
-            etree.tostring(root, encoding='utf-8').decode('utf-8'))
+            etree.tostring(root, encoding='utf-8')) #  .decode('utf-8'))
 
 
 
@@ -443,14 +444,14 @@ lis_person_contact_email_primary: ['email@domain.ext']
 lis_result_sourcedid: ['(URL-encoded context id):(resource link id):(user id)']
 user_id: [(32 hex digit string)]
 roles: ['Student', 'Administrator' and/or 'Instructor']
-context_id: [(EdX ID -- course code, name etc. -- of the course calling Presto)] 
+context_id: [(EdX ID -- course code, name etc. -- of the course calling Presto)]
 resource_link_id: [(prefixed 32 hex digit string identifying the specific EdX course assignment for which Presto is called)]
 
 oauth_nonce: [(32 hex digit string)]
 oauth_consumer_key: (client key zoals boven besproken, een 8-digit base36 code)
 oauth_signature_method: ['HMAC_SHA1']
 oauth_version: ['1.0']
-oauth_timestamp: [integer value (unix timestamp)] 
+oauth_timestamp: [integer value (unix timestamp)]
 oauth_signature: [(28 base64 digit string)]
 oauth_callback: ['about:blank']
 

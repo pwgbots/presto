@@ -106,7 +106,7 @@ def prefixed_user_name(user):
     ln = user.last_name
     if fn[-len(ln):] == ln:
         fn = fn.replace(ln, '').strip()
-    return fn + ' ' + p + ln    
+    return fn + ' ' + p + ln
 
 
 # writes message to log file.
@@ -186,7 +186,7 @@ def encode(n, k, deterministic=False):
 # decodes an encoded 64-bit integer from an encoded 32 hex digit string s
 # using 32 hex digit string k as key.
 def decode(s, k):
-    # reject strings that ar not 32-digit hexadecimal strings 
+    # reject strings that ar not 32-digit hexadecimal strings
     if (len(s) != 32) or (all(c in hexdigits for c in s) == False):
         raise ValueError(INCORRECT_SESSION_KEY)
     # convert characters to numbers while counting the 1-bits
@@ -302,12 +302,12 @@ def half_points_if_any(f):
 # returns disk usage for directory "path" in kilobytes (as a string)
 def disk_usage(path):
     try:
-        return subprocess.check_output(['du','-sh', path]).split()[0].decode('utf-8')
+        return subprocess.check_output(['du','-sh', path]).split()[0]  #  .decode('utf-8')
     except:
         return ''
 
 
-# returns number n followed by phrase, which is pluralized unless n = 1  
+# returns number n followed by phrase, which is pluralized unless n = 1
 def plural_s(n, phrase):
     if n == 1:
         return '1 ' + phrase
@@ -354,7 +354,7 @@ def pdf_to_text(path):
             cwd = os.getcwd()
             # temporarily move to the directory containing pdftotext.exe
             os.chdir(settings.PDF_TO_TEXT_DIR)
-            
+
         cmd = [settings.PDF_TO_TEXT_CMD, '-enc', 'ASCII7', path, '-']
         ascii = subprocess.check_output(cmd)
 
@@ -383,7 +383,7 @@ def pdf_to_text(path):
                 pars.pop()
             # Add remaining paragraphs to result (using Unix newline).
             ascii += '\n'.join(pars)
-            
+
     except Exception as e:
         log_message(
             'ERROR: Failed to execute command line {}\n{}'.format(

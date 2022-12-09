@@ -41,7 +41,12 @@ from .models import (
 from datetime import datetime, timedelta
 
 # presto modules
-from presto.generic import log_message 
+from presto.generic import log_message
+from presto.extension_data import (
+    ASSIGNMENT_DEADLINE_EXTENSIONS,
+    REVIEW_DEADLINE_EXTENSIONS
+)
+from presto.team_data import PARTNER_LISTS
 
 # NOTE: partner list is workaround only! To be removed when database implementation is functional
 
@@ -69,11 +74,13 @@ def extended_review_deadline(p):
         return r.review_deadline + timedelta(hours=xh)
     return r.review_deadline
 
-"""
-NOTE: To separate a *leader* from his/her team, the remaining team should be assigned a
-      new leader (swap roles if team count = 2) AND (!) re-register all team leader actions
-      (assignments, file uploads, reviews, appeals, objections) to the new leader.
-"""
+
+# NOTE: To separate a *leader* from his/her team, the remaining team should be assigned a
+#       new leader (swap roles if team count = 2) AND (!) re-register all team leader actions
+#       (assignments, file uploads, reviews, appeals, objections) to the new leader.
+
+
+
 # returns the list of partner tuples for relay r if it is defined
 def relay_partner_list(r):
     # compose the relay title without HTML tags (this is the key in the dict of partner lists)
@@ -135,7 +142,7 @@ def team_lookup_dict(r):
     un_p_dict = {}
     for tpl in list(p_set):
         # add dummy index as suffix if greater than 0
-        un = (tpl[0] + '__' + tpl[2]) if tpl[2] > 0 else tpl[0]
+        un = '{}__{}'.format(tpl[0], tpl[2]) if tpl[2] > 0 else tpl[0]
         un_p_dict[un] = tpl[1]
     tz = timezone.get_current_timezone()
     # start with empty lookup dict

@@ -83,10 +83,10 @@ class HTMLtoPDFParser(HTMLParser):
     header_level = 0
     line_width = 0
     word_list = []
-    
+
     def set_pdf(self, pdf):
         self.pdf = pdf
-    
+
     def font(self):
         style = ''
         if self.bold:
@@ -103,7 +103,7 @@ class HTMLtoPDFParser(HTMLParser):
         else:
             family = 'DejaVu'
         return {'family': family, 'style': style, 'size': size}
-    
+
     def handle_starttag(self, tag, attrs):
         if tag == 'strong':
             self.bold = True
@@ -215,7 +215,7 @@ class HTMLtoPDFParser(HTMLParser):
                 self.pdf.cell(w['width'] + sw + xs, h, w['text'])
                 self.pos_x += w['width'] + sw + xs
             self.word_list = []
-        
+
         # move one line down and to the left
         self.pos_x = self.indent
         self.pos_y += base_line + self.spacing * POINT_TO_MM * height
@@ -277,10 +277,10 @@ class MyFPDF(FPDF):
         self.cell(80, 5, date)
         self.set_xy(46, 27)
         self.cell(80, 5, subject)
-        # show DelftX logo on the right 
+        # show DelftX logo on the right
         self.image(DELFTX_LOGO, x=145, y=10, w=55)
         self.cell(w=55)
-        
+
     # puts 'Page P (of N)' at bottom of page
     def footer(self):
         self.set_y(-15)
@@ -393,9 +393,9 @@ def ack_letter(request, **kwargs):
             cases = plural_s(rd['ACC'], 'appeal case')
             hours = plural_s(rd['XH'], 'hour')
             # average appreciation is scaled between -1 and 1
-            if rd['AA'] > 0: 
+            if rd['AA'] > 0:
                 appr = ' The participants involved in the appeal were appreciative of the arbitration.'
-            elif rd['AA'] < -0.5: 
+            elif rd['AA'] < -0.5:
                 appr = ' Regrettably, the participants involved in the appeal were generally not appreciative of the arbitration.'
             else:
                 appr = ''
@@ -438,7 +438,7 @@ def ack_letter(request, **kwargs):
         pdf.output(temp_file, 'F')
         log_message('Rendering acknowledgement letter for ' + rd['PR'], context['user'])
         # push the PDF as attachment to the browser
-        w = FileWrapper(file(temp_file, 'rb'))
+        w = FileWrapper(open(temp_file, 'rb'))
         response = HttpResponse(w, content_type='application/pdf')
         response['Content-Disposition'] = 'attachment; filename="presto-LoA.pdf"'
         # now we can assume that the PDF will appear, so the updated letter data can be saved

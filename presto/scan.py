@@ -74,7 +74,7 @@ def missing_key_words(a, doc):
         if type(doc).__name__ == 'Document':
             for par in doc.paragraphs:
                 # reduce all white space to a single one, including "non-breaking spaces"
-                txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
+                txt = ' '.join(par.text.replace('\u00A0', ' ').strip().split())
                 if ignore_case:
                     m = ucw in txt.upper()
                 else:
@@ -87,7 +87,7 @@ def missing_key_words(a, doc):
                         for cell in row.cells:
                             for par in cell.paragraphs:
                                 # reduce all white space to a single one, including "non-breaking spaces"
-                                txt = ' '.join(par.text.replace(unichr(160), ' ').strip().split())
+                                txt = ' '.join(par.text.replace('\u00A0', ' ').strip().split())
                                 if ignore_case:
                                     m = ucw in txt.upper()
                                 else:
@@ -131,7 +131,7 @@ def has_section(doc, s):
         paragraphs ignored.
     """
     # replace non-breaking spaces by normal ones
-    s = s.replace(unichr(160), ' ').split()
+    s = s.replace('\u00A0', ' ').split()
     # set the max. word count to consider it still as a section title
     max_cnt = len(s) + 4
     # strip ALL whitespace from section title and convert it to upper case
@@ -140,7 +140,7 @@ def has_section(doc, s):
     # use searching to indicate whether the title has been found 
     searching = True
     for par in doc.paragraphs:
-        w_list = par.text.replace(unichr(160), ' ').split()
+        w_list = par.text.replace('\u00A0', ' ').split()
         w_cnt = len(w_list)
         if w_cnt <= max_cnt and searching:
             searching = not (s in ''.join(w_list).upper())

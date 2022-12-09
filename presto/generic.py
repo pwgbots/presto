@@ -26,6 +26,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import MultipleObjectsReturned
 from django.db import IntegrityError
 from django.db.models import Q
 from django.shortcuts import render
@@ -138,7 +139,20 @@ def generic_context(request, test_code=None):
             key = request.session.session_key
         else:
             key = NO_SESSION_KEY
-        user_session, created = UserSession.objects.get_or_create(user=presto_user, session_key=key)
+        try:
+            user_session, created = UserSession.objects.get_or_create(user=presto_user, session_key=key)
+        except MultipleObjectsReturned as e:
+            user_session_list = UserSession.objects.filter(user=presto_user, session_key=key)
+            log_message('ERROR: multiple session objects for {}'.format(str(presto_user)))
+            user_session = user_session_list.first()
+            try:
+                del_ids = [u.id for u in user_session_list.exclude(id=user_session.id)]
+                log_message('TRACE: IDs to delete: {}'.format(str(del_ids)))
+                UserSession.objects.filter(id__in=del_ids).delete()
+            except Exception as e:
+                log_message('ERROR: failed to delete session objects -- {}'.format(str(e)))
+                
+                     
 
         # update the session record, notably the hex keys
         # NOTE: These keys "rotate" each time this "generic context" function is called,

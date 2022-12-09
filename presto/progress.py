@@ -61,7 +61,7 @@ def progress(request, **kwargs):
     # NOTE: a downloaded image is part the current page, meaning that the coding keys
     # should NOT be rotated; this is achieved by passing "NOT" as test code.
     context = generic_context(request, 'NOT')
-    if True:
+    try:
         # check whether user can have student role
         if not (has_role(context, 'Student') or has_role(context, 'Instructor')):
             raise Exception('No access')
@@ -138,8 +138,6 @@ def progress(request, **kwargs):
         response = HttpResponse(content_type='image/png')
         img.save(response, 'PNG')
         return response
-    try:
-        print('HERE')
     except Exception as e:
         log_message(
             'ERROR while generating progress chart: ' + str(e),

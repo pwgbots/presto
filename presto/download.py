@@ -69,7 +69,7 @@ from presto.utils import (
 def download(request, **kwargs):
     """
     View for download page.
-    
+
     NOTE:
     (1) This view does not render a page, but sends a file to the browser.
     (2) Downloading a file opens a NEW browser tab/window, meaning that the
@@ -110,7 +110,7 @@ def download(request, **kwargs):
         # verify that download is for an existing assignment
         log_message('Looking for assignment #{}'.format(aid), context['user'])
         a = Assignment.objects.get(pk=aid)
-        
+
         # get the list of participant uploads for this assignment (or its clone original)
         # and also the full path to the upload directory
         if a.clone_of:
@@ -124,7 +124,7 @@ def download(request, **kwargs):
             pul = ParticipantUpload.objects.filter(assignment=a)
             upl_dir = os.path.join(settings.MEDIA_ROOT, a.participant.upload_dir)
         log_message('Upload dir = ' + upl_dir, context['user'])
-        # create an empty temporary dir to hold copies of uploaded files 
+        # create an empty temporary dir to hold copies of uploaded files
         temp_dir = os.path.join(upl_dir, 'temp')
         try:
             rmtree(temp_dir)
@@ -165,7 +165,7 @@ def download(request, **kwargs):
             # compress the files into a single zip file
             zip_file = make_archive(zip_dir,'zip', temp_dir, pr_work)
             response = HttpResponse(
-                FileWrapper(file(zip_file,'rb')),
+                FileWrapper(open(zip_file,'rb')),
                 content_type='application/zip'
                 )
             response['Content-Disposition'] = (
@@ -226,7 +226,7 @@ def download(request, **kwargs):
                 '.xlsx': od + 'spreadsheetml.sheet',
                 '.pptx': od + 'presentationml.presentation'
                 }
-            w = FileWrapper(file(settings.LEADING_SLASH + formal_name, 'rb'))
+            w = FileWrapper(open(settings.LEADING_SLASH + formal_name, 'rb'))
             response = HttpResponse(w, content_type=mime[ext])
             response['Content-Disposition'] = (
                 'attachment; filename="{}-{}{}{}"'.format(
@@ -256,7 +256,7 @@ def download(request, **kwargs):
                         context['user']
                         )
             return response
-            
+
     except Exception as e:
         report_error(context, e)
         return render(request, 'presto/error.html', context)
@@ -277,12 +277,13 @@ def clean_xml_in_zip(zip_name):
     for x in zl:
         if x.filename[-4:] == '.xml':
             xml_names.append(x.filename)
-            xml = zf.open(x, 'rU').read().decode('utf-8')
+            xml = zf.open(x, 'r').read().decode('utf-8')
             # MS Word: completely remove tags with language codes
             xml = word_re.sub('', xml)
             # MS PowerPoint: strip language attribute from tags with language codes
             xml = ppt_re.sub('', xml)
-            xml_list.append((x.filename, xml.encode('utf-8')))
+            #  xml_list.append((x.filename, xml.encode('utf-8')))
+            xml_list.append((x.filename, xml))
     zf.close()
     # create a temporary file
     tmp_fd, tmp_name = mkstemp(dir=os.path.dirname(zip_name))
@@ -337,7 +338,7 @@ def clear_metadata(src, dst):
             prs.save(dst)
             clean_xml_in_zip(dst)
         elif ext == '.pdf':
-            fin = file(src, 'rb')
+            fin = open(src, 'rb')
             inp = PdfFileReader(fin)
             outp = PdfFileWriter()
             for page in range(inp.getNumPages()):

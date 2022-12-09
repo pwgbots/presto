@@ -99,7 +99,7 @@ def picture_queue(request, **kwargs):
             '.jpg': 'jpeg',
             '.png': 'png',
         }
-        w = FileWrapper(file(p.path, 'rb'))
+        w = FileWrapper(open(p.path, 'rb'))
         return HttpResponse(w, 'image/' + mime.get(ext, '*'))
 
     # check mail server for new pictures for this course
@@ -185,14 +185,14 @@ def picture_queue(request, **kwargs):
 
     # add picture queue mail address
     context['pq_mail'] = settings.PICTURE_QUEUE_MAIL
-    
+
     # add course data to context
     context['course'] = {
         'object': c,
         'hex':  encode(c.id, context['user_session'].encoder),
         'start': c.language.fdate(c.start_date),
         'end': c.language.fdate(c.end_date),
-        'manager': prefixed_user_name(c.manager),                         
+        'manager': prefixed_user_name(c.manager),
         'instructors': ', '.join(
             [prefixed_user_name(i) for i in c.instructors.all()]
             )
@@ -206,7 +206,7 @@ def picture_queue(request, **kwargs):
         'sender': qp.mail_from_name if qp.mail_from_name else qp.mail_from_address
         } for qp in QueuePicture.objects.filter(course=c).order_by('time_received', 'id')
     ]
-    context['page_title'] = 'Presto Picture Queue' 
+    context['page_title'] = 'Presto Picture Queue'
     return render(request, 'presto/picture_queue.html', context)
 
 

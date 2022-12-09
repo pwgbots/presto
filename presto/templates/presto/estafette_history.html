@@ -248,7 +248,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
         {% if team %}
         <div class="ui large black basic ribbon label">
           <i class="users icon"></i>
-          <em>Team:</em> {{ team|safe }}
+          <em>Team:</em> {% if no_names %}(anonymized){% else %}{{ team|safe }}{% endif %}
         </div>
         {% endif %}
       </div> {# end of eleven wide column DIV #}
@@ -737,7 +737,7 @@ function itemAppraisalAsHtml(rating, ap_str) {
                   <i class="law icon"></i>
                   <div class="content">
                     {{ lang|phrase:'Referee_motivation' }}
-                    {% if identify %}
+                    {% if identify and not no_names %}
                       <span style="font-weight:500">({{ r.referee }})</span>
                     {% endif %}
                   </div>

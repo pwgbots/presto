@@ -1031,6 +1031,81 @@ function toggleList(list) {
             {{ referee_case.case_desc|safe }}
           </div>
         </div>
+        {% if referee_case.duplicate_ap %}
+
+        <div class="ui grey inverted clearing segment">
+          <h4 class="ui header">
+            <i class="law icon"></i>
+            <div class="content" style="padding-right: 0.5em">
+             {{ referee_case.duplicate_ap.prior_ref }}
+            </div>
+            <a class="ui mini circular icon button" onclick="toggleInfo('ap-duplicate');">
+              <i class="chevron down icon"></i>
+            </a>
+          </h4>
+         </div>
+         <div id="info-ap-duplicate" class="ui segment" hidden="hidden">
+           <div class="ui small header">
+             <i class="star outline icon"></i>
+             <div class="content"{% if referee_case.show_names %} data-tooltip="{{ referee_case.duplicate_ap.reviewer }}"{% endif %}>
+               {{ referee_case.lang|phrase:'Successor_review' }}
+             </div>
+           </div>
+           {% if referee_case.duplicate_ap.rev_items|length > 0 %}
+             <p><strong><em>{{ referee_case.lang|phrase:'Specific_review_items' }}</em></strong></p>
+             {% for ri in referee_case.duplicate_ap.rev_items %}
+               <div>
+                 <strong>{{ ri.item.number }}. {{ ri.item.name }}</strong>
+                 
+                 <div id="appeal-itap-{{ ri.item.number }}"
+                      style="display: inline-block; margin-left: 1em">
+                 </div>
+               </div>
+               <div style="font-size: small">
+                 {{ ri.item.instruction|safe }}
+               </div>
+               {{ ri.comment|safe }}
+             {% endfor %}
+             <p><strong><em>{{ referee_case.lang|phrase:'Overall_review' }}</em></strong></p>
+           {% endif %}
+           {{ referee_case.duplicate_ap.review.grade_motivation|safe }}
+           <label><strong>{{ referee_case.lang|phrase:'Review_rating' }}:</strong></label>
+           <div id="appeal-dupl-rev-rat" class="ui yellow star rating"
+                data-rating="{{ referee_case.duplicate_ap.review.grade }}" data-max-rating="5">
+           </div>
+           {% if referee_case.duplicate_ap.review.is_rejection %}
+             <div class="ui raised segment">
+               <div class="ui small header">
+                 <i class="thumbs down icon"></i>
+                 <div class="content">
+                   {{ referee_case.lang|phrase:'Successor_rejected' }}
+                 </div>
+               </div>
+             </div>
+           {% endif %} 
+           <div class="ui small header" style="background-color: silver; padding: 4px">
+             <i class="law icon"></i>
+             <div class="content">
+               {{ referee_case.duplicate_ap.prior_ref }}
+             </div>
+           </div>
+         
+             {{ referee_case.duplicate_ap.appeal.grade_motivation|safe }}
+            {% if referee_case.duplicate_ap.prior_grade %}
+              <label><strong>{{ referee_case.lang|phrase:'Review_prior_rating' }}:</strong></label>
+              <div id="appeal-dec-prior-rat" class="ui orange star rating"
+                   data-rating="{{ referee_case.duplicate_ap.prior_grade }}" data-max-rating="5">
+              </div><br>
+            {% endif %}
+            <label><strong>{{ referee_case.lang|phrase:'Review_rating' }}:</strong></label>
+            <div id="appeal-dup-dec-rat" class="ui yellow star rating"
+                 data-rating="{{ referee_case.duplicate_ap.grade }}" data-max-rating="5">
+            </div>
+            <div>{{ referee_case.duplicate_ap.penalties_as_text|safe }}</div>
+          </div>
+          
+        {% endif %}
+        </div>
         <div class="ui small header">
           {{ referee_case.step_title|safe }}
         </div>
@@ -1408,6 +1483,20 @@ function toggleList(list) {
                     style="background-color: Silver"
                   {% endif %}
                 >{{ a.code }}{% if a.review.grade == 1 %}&starf;{% endif %}</span>
+                {% if a.duplicate %}
+                <div class="ui small red label"
+                     style="padding-right: 0;padding-left: 6px;"
+                     data-tooltip="Multiple appeals for this work!">
+                  <i class="clone outline icon"></i>
+                </div>
+                {% endif%}
+                {% if a.duplicate_case %}
+                <div class="ui small red label"
+                     style="padding-right: 0;padding-left: 6px;"
+                     data-tooltip="{{ a.duplicate_case }}">
+                  <i class="law icon"></i>
+                </div>
+                {% endif%}
                 {{ ra.case.name }} <span style="color: gray; font-size: 80%">({{ ra.leg.name }})</span>
               </a>
             {% endwith%}

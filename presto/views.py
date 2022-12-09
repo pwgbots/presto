@@ -92,14 +92,14 @@ def index(request):
 @login_required(login_url=settings.LOGIN_URL)
 def announcements(request):
     context = generic_context(request)
-    context['page_title'] = 'Presto Announcements' 
+    context['page_title'] = 'Presto Announcements'
     return render(request, 'presto/announcements.html', context)
 
 
 @login_required(login_url=settings.LOGIN_URL)
 def setting_view(request):
     context = generic_context(request)
-    context['page_title'] = 'Presto Settings' 
+    context['page_title'] = 'Presto Settings'
     return render(request, 'presto/setting_view.html', context)
 
 
@@ -120,7 +120,8 @@ def log_file(request, **kwargs):
         with codecs.open(path, 'r', encoding='utf8') as log:
             content = log.read()
             lines = kwargs.get('lines', '')
-            pattern = unquote(kwargs.get('pattern', '')).decode('utf8') 
+            # pattern = unquote(kwargs.get('pattern', '')).decode('utf8')
+            pattern = unquote(kwargs.get('pattern', ''))
             if lines:
                 # Show last N lines.
                 content = '\n'.join(content.split('\n')[int(lines):])
@@ -134,7 +135,7 @@ def log_file(request, **kwargs):
                         )
                     )
     except IOError as e:
-        report_error(context, e) 
+        report_error(context, e)
         return render(request, 'presto/error.html', context)
     return HttpResponse(content, content_type='text/plain; charset=utf-8')
 
@@ -190,7 +191,7 @@ def dataset(request, **kwargs):
             return response
 
     except IOError as e:
-        report_error(context, e) 
+        report_error(context, e)
         return render(request, 'presto/error.html', context)
 
 
@@ -206,7 +207,7 @@ def scan(request, **kwargs):
         #       the "cloneOf" foreign key field can be NULL (a Django-specific issue)
         doubles = Assignment.objects.filter(is_rejected=False, clone_of__isnull=True,
             # NOTE: ignore early relays
-            participant__estafette__id__gt=40                                
+            participant__estafette__id__gt=40
             ).values('participant__id', 'leg__id'
             ).annotate(same_leg_cnt=Count('id')
             ).values('participant__id', 'leg__id', 'same_leg_cnt'
@@ -219,7 +220,7 @@ def scan(request, **kwargs):
                 # get the latest one
                 a = a_set.first()
                 # also get the one to keep
-                b = a_set[1] 
+                b = a_set[1]
                 # log that we found a duplicate
                 log_message(
                     'WATCHDOG: Found duplicate assignment #{}-{}{}--{}'.format(
@@ -260,7 +261,7 @@ def scan(request, **kwargs):
                     except:
                         # signal that assignment ID is a foreign key of some other record
                         log_message('-- failed to restore pred-succ relation')
-                    
+
     except Exception as e:
         content = 'ERROR during scan: ' + str(e)
     return HttpResponse(content, content_type='text/plain; charset=utf-8')
@@ -299,7 +300,7 @@ def suspect(request, **kwargs):
             'leg__number',
             'time_uploaded'
             )
-        
+
         content = '{} suspects\n\n'.format(len(a_set))
         for a in a_set:
             content += '\n{}{} by {} (#{}, {}%)'.format(
@@ -319,5 +320,5 @@ def suspect(request, **kwargs):
         return HttpResponse(content, content_type='text/plain; charset=utf-8')
 
     except IOError as e:
-        report_error(context, e) 
+        report_error(context, e)
         return render(request, 'presto/error.html', context)
