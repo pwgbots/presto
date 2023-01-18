@@ -16,7 +16,7 @@ openpyxl==3.0.10
 
 PyPDF2==2.11.1
 PyLTI==0.7.0
-lxml==4.9.0
+lxml~>4.9.1
 
 # asgiref==3.5.2
 # certifi==2022.9.24
