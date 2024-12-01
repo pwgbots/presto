@@ -2,7 +2,9 @@
 
 ## What is a project relay?
 A project relay is an innovative form of education, aiming to help students develop applied skills.    
-Please take a look at our project wiki (still in development!) at http://wiki.presto.tudelft.nl
+Presto has been used in support of modeling relays until 2024. As students increasingly used generative AI
+to produce models, report texts and reviews, this invalidated the calibrated rubrics that permitted summative
+testing.
 
 ## Platforms
 The Presto software builds on these software platforms:
