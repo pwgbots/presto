@@ -12,3 +12,10 @@ The Presto software builds on these software platforms:
 * Python
 * Django
 * Semantic UI
+
+# NOTE: Presto is no longer maintained
+Unfortunately, the advent of generative AI / Large Language Models has had large impact on
+the didactical form of a project relay. These technologies hamper take-home assignments as
+summative tests, and even more so the use of peer review & assessment. Although students can
+often detect that work is AI-generated, this is very difficult to prove objectively.
+
